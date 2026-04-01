@@ -57,7 +57,7 @@ jobs:
       run: |
         cd kernel
         
-        cat >> arch/arm64/configs/gki_defconfig << 'EOF
+        cat >> arch/arm64/configs/gki_defconfig << 'EOF'
 
            
         CONFIG_KSU=y
