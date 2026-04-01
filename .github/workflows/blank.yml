@@ -114,7 +114,7 @@ jobs:
 
     - name: 📥 Copy Image
       run: |
-        cp kernel/arch/arm64/boot/Image ak3/
+        cp kernel/out/arch/arm64/boot/Image ak3/
 
     # 📦 PACK ZIP
     - name: 📦 Pack ZIP
