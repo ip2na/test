@@ -128,10 +128,25 @@ jobs:
         cd ak3
         sha256sum Kernel-KSU-SUSFS.zip > checksum.txt
 
-    # 📤 TELEGRAM
     - name: 📤 Upload to Telegram
       run: |
-        cd ak3
-        curl -F document=@Kernel-KSU-SUSFS.zip \
-        -F caption="🔥 Build Success GKI 5.10\n⚙️ KSU Next + SUSFS\n🚀 ThinLTO\n\n$(cat checksum.txt)" \
-        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+       cd ak3
+       
+          if [ ! -f "Kernel-KSU-SUSFS.zip" ]; then
+          echo "Error: Kernel-KSU-SUSFS.zip tidak ditemukan!"
+          exit 1
+         fi
+         
+         if [ ! -f "checksum.txt" ]; then
+         echo "Error: checksum.txt tidak ditemukan!"
+         exit 1
+         fi 
+         
+         if [ -z "${{ secrets.BOT_TOKEN }}" ] || [ -z "${{ secrets.CHAT_ID }}" ]; then
+         echo "Error: BOT_TOKEN atau CHAT_ID belum diset di repository secrets!"
+         exit 1
+         fi
+         
+         curl --fail -F document=@Kernel-KSU-SUSFS.zip \
+         -F caption="Build Success GKI 5.10 KSU Next + SUSFS ThinLTO\n\n$(cat checksum.txt)" \
+         "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
