@@ -1,0 +1,140 @@
+name: Build GKI 5.10 KSU SUSFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
+      
+    - name: 💾 Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo apt clean
+
+    - name: 🧰 Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          git curl wget bc bison flex \
+          libssl-dev libelf-dev zip cpio
+          
+    - name: ⚡ Setup Clang r498229 (LLVM 17)
+      run: |
+        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/ba7da711271d310dda6b5134d8f4448f6a276a27/clang-r498229b.tar.gz
+        mkdir clang
+        tar -zxf clang-r498229b.tar.gz -C clang
+        rm -rf clang-r498229b.tar.gz
+
+    # SOURCE KERNEL
+    - name: 📦 Clone Kernel
+      run: |
+        git clone --depth=1 https://github.com/ip2na/android12-5.10-lts.git kernel
+
+    # KSU NEXT + SUSFS
+    - name: 🔥 Setup KernelSU Next + SUSFS
+      run: |
+        cd kernel
+
+        curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
+
+        git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 .susfs
+
+        kernel_patches="$(pwd)/.susfs/kernel_patches"
+
+        cp -R $kernel_patches/fs/* ./fs
+        cp -R $kernel_patches/include/* ./include
+
+        patch -p1 < $kernel_patches/*.patch || true
+
+    # FIX DEFCONFIG
+    - name: Inject Config
+      run: |
+        cd kernel
+        
+        cat >> arch/arm64/configs/gki_defconfig << 'EOF
+
+           
+        CONFIG_KSU=y
+        CONFIG_KSU_MANUAL_HOOK=y
+        CONFIG_KSU_LSM_SECURITY_HOOKS=y
+       
+        CONFIG_KSU_SUSFS=y
+        CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+        CONFIG_KSU_SUSFS_SUS_PATH=y
+        CONFIG_KSU_SUSFS_SUS_MOUNT=y
+        CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+        CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+        CONFIG_KSU_SUSFS_SUS_KSTAT=y
+        CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+        CONFIG_KSU_SUSFS_ENABLE_LOG=y
+        CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+        CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+        CONFIG_KSU_SUSFS_OPEN_REDIRECT=y 
+       
+        CONFIG_MTK_CPU_FREQ=y
+        CONFIG_MTK_CPU_DVFS=y
+        CONFIG_MTK_SUSPEND=y
+        CONFIG_MTK_VCORE_DVFS=y
+        CONFIG_MTK_IDLE_BALANCE=y
+        CONFIG_MTK_SCHED_DVFS=y
+
+        CONFIG_ZRAM=y
+        CONFIG_ZRAM_WRITEBACK=y
+        CONFIG_ZSWAP=y
+       
+        CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+        CONFIG_SCHED_TUNE=y
+       
+        EOF
+
+    # 🏗️ BUILD
+    - name: 🏗️ Build Kernel
+      run: |
+        cd kernel
+
+        export PATH=$PWD/../clang/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CC=clang
+        export LD=ld.lld
+        export LLVM=1
+        export LLVM_IAS=1
+
+        make gki_defconfig
+
+        make -j$(nproc)
+
+    # 📦 ANYKERNEL (PUNYA KAMU)
+    - name: 📦 Clone AnyKernel3 Custom
+      run: |
+        git clone https://github.com/ip2na/Anykernel3.git ak3
+
+    - name: 📥 Copy Image
+      run: |
+        cp kernel/arch/arm64/boot/Image ak3/
+
+    # 📦 PACK ZIP
+    - name: 📦 Pack ZIP
+      run: |
+        cd ak3
+        zip -r9 Kernel-KSU-SUSFS.zip * -x "*.git*" -x "*.github*"
+
+    # 🔐 CHECKSUM
+    - name: 🔐 Generate SHA256
+      run: |
+        cd ak3
+        sha256sum Kernel-KSU-SUSFS.zip > checksum.txt
+
+    # 📤 TELEGRAM
+    - name: 📤 Upload to Telegram
+      run: |
+        cd ak3
+        curl -F document=@Kernel-KSU-SUSFS.zip \
+        -F caption="🔥 Build Success GKI 5.10\n⚙️ KSU Next + SUSFS\n🚀 ThinLTO\n\n$(cat checksum.txt)" \
+        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
