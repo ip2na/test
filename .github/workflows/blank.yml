@@ -129,7 +129,7 @@ jobs:
         sha256sum Kernel-KSU-SUSFS.zip > checksum.txt
 
     - name: 📤 Upload to Telegram
-    run: |
+      run: |
        cd ak3
 
        if [ ! -f "Kernel-KSU-SUSFS.zip" ]; then
