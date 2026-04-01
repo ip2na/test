@@ -76,13 +76,15 @@ jobs:
         CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
         CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
         CONFIG_KSU_SUSFS_OPEN_REDIRECT=y 
-       
+        # CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
         CONFIG_MTK_CPU_FREQ=y
         CONFIG_MTK_CPU_DVFS=y
         CONFIG_MTK_SUSPEND=y
         CONFIG_MTK_VCORE_DVFS=y
         CONFIG_MTK_IDLE_BALANCE=y
         CONFIG_MTK_SCHED_DVFS=y
+        # CONFIG_PREEMPT_VOLUNTARY is not set
+        # CONFIG_PREEMPT_NONE is not set 
 
         CONFIG_ZRAM=y
         CONFIG_ZRAM_WRITEBACK=y
@@ -108,7 +110,7 @@ jobs:
     # 📦 ANYKERNEL (PUNYA KAMU)
     - name: 📦 Clone AnyKernel3 Custom
       run: |
-        git clone https://github.com/ip2na/Anykernel3.git ak3
+        git clone --depth=1 -b gki-2.0 https://github.com/ip2na/AnyKernel3.git ak3
 
     - name: 📥 Copy Image
       run: |
