@@ -79,19 +79,19 @@ jobs:
     - name: Pack ZIP
       run: |
         cd ak3
-        zip -r9 Kernel-Vanilla.zip * -x "*.git*" -x "*.github*"
+        zip -r9 kernel-Vanilla.zip * -x "*.git*" -x "*.github*"
 
     - name: Generate SHA256
       run: |
         cd ak3
-        sha256sum Kernel-Vanilla.zip > checksum.txt
+        sha256sum kernel-Vanilla.zip > checksum.txt
 
     - name: Upload to Telegram
       run: |
        cd ak3
 
-       if [ ! -f "Kernel-Vanilla.zip" ]; then
-       echo "Error: Kernel-Vanilla.zip tidak ditemukan!"
+       if [ ! -f "kernel-Vanilla.zip" ]; then
+       echo "Error: kernel-Vanilla.zip tidak ditemukan!"
        exit 1
        fi
 
@@ -105,7 +105,7 @@ jobs:
        exit 1
        fi
 
-       curl --fail -F document=@Kernel-Vanilla.zip \
+       curl --fail -F document=@kernel-Vanilla.zip \
        -F caption="Build Success GKI 5.10 Vanilla ThinLTO $(cat checksum.txt)" \
        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
       
