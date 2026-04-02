@@ -24,14 +24,14 @@ jobs:
           git curl wget bc bison flex \
           libssl-dev libelf-dev zip cpio
           
-    - name: Setup Clang r498229 (LLVM 17)
+    - name: Setup google clang 19.0.1
       run: |
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/ba7da711271d310dda6b5134d8f4448f6a276a27/clang-r498229b.tar.gz
+        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz
         mkdir clang
-        tar -zxf clang-r498229b.tar.gz -C clang
-        rm -rf clang-r498229b.tar.gz
+        tar -zxf clang-r536225.tar.gz -C clang
+        rm -rf clang-r536225.tar.gz
 
-    - name: Clone Kernel
+    - name: Clone android12-5.10-lts (GKI 5.10)
       run: |
         git clone --depth=1 https://github.com/ip2na/android12-5.10-lts.git kernel
 
