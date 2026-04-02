@@ -1,0 +1,165 @@
+name: Build GKI 5.10 KSU SUSFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo apt clean
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git curl wget bc bison flex \
+            libssl-dev libelf-dev zip cpio
+
+      - name: Setup google clang 19.0.1
+        run: |
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz
+          mkdir clang
+          tar -zxf clang-r536225.tar.gz -C clang
+          rm -rf clang-r536225.tar.gz
+
+      - name: Clone android12-5.10-lts (GKI 5.10)
+        run: |
+          git clone --depth=1 https://github.com/ip2na/android12-5.10-lts.git kernel
+
+      - name: Setup KernelSU Next + SUSFS
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 .susfs
+          kernel_patches="$(pwd)/.susfs/kernel_patches"
+          cp -R $kernel_patches/fs/* ./fs
+          cp -R $kernel_patches/include/* ./include
+          patch -p1 < $kernel_patches/*.patch || true
+
+      - name: Inject Config
+        run: |
+          cd kernel
+          cat >> arch/arm64/configs/gki_defconfig << 'EOF'
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOK=y
+          CONFIG_KSU_LSM_SECURITY_HOOKS=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          # CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
+          CONFIG_MTK_CPU_FREQ=y
+          CONFIG_MTK_CPU_DVFS=y
+          CONFIG_MTK_SUSPEND=y
+          CONFIG_MTK_VCORE_DVFS=y
+          CONFIG_MTK_IDLE_BALANCE=y
+          CONFIG_MTK_SCHED_DVFS=y
+          # CONFIG_PREEMPT_VOLUNTARY is not set
+          # CONFIG_PREEMPT_NONE is not set
+          CONFIG_ZRAM=y
+          CONFIG_ZRAM_WRITEBACK=y
+          CONFIG_ZSWAP=y
+          CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+          CONFIG_SCHED_TUNE=y
+          EOF
+
+      - name: Build Kernel
+        run: |
+          cd kernel
+          export PATH="$(pwd)/../clang/bin:$PATH"
+          export KBUILD_BUILD_USER="builder-dev"
+          export KBUILD_BUILD_HOST="Anyaanasera"
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
+
+      - name: Collect Build Info
+        run: |
+          cd kernel
+          # Versi kernel
+          KERNEL_VER=$(cat out/include/config/kernel.release 2>/dev/null || echo "unknown")
+          echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV
+
+          # Build date
+          BUILD_DATE=$(date "+%a %b %d %H:%M:%S %Z %Y")
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+
+          # Versi compiler clang
+          CLANG_VER=$(../clang/bin/clang --version | head -n1 | sed -E 's/^Android \([0-9]+\) clang version ([0-9]+\.[0-9]+\.[0-9]+).*$/Android clang \1/')
+          echo "CLANG_VER=$CLANG_VER" >> $GITHUB_ENV
+
+          # Versi KernelSU-Next
+          if [ -d "KernelSU-Next" ]; then
+            KSU_VER=$(cd KernelSU-Next && git describe --tags --always 2>/dev/null || echo "dev-susfs")
+          else
+            KSU_VER="KernelSU-Next"
+          fi
+          echo "KSU_VER=$KSU_VER" >> $GITHUB_ENV
+
+          # Versi SuSFS
+          if [ -d ".susfs" ]; then
+            SUSFS_VER=$(cd .susfs && git describe --tags --always 2>/dev/null || echo "gki-android12-5.10")
+          else
+            SUSFS_VER="unknown"
+          fi
+          echo "SUSFS_VER=$SUSFS_VER" >> $GITHUB_ENV
+
+      - name: Clone AnyKernel3 Custom
+        run: |
+          git clone --depth=1 -b gki-2.0 https://github.com/ip2na/AnyKernel3.git ak3
+
+      - name: Copy Image
+        run: |
+          cp kernel/out/arch/arm64/boot/Image ak3/
+
+      - name: Pack ZIP
+        run: |
+          cd ak3
+          zip -r9 Kernel-KSU-SUSFS.zip * -x "*.git*" -x "*.github*"
+
+      - name: Generate SHA256
+        run: |
+          cd ak3
+          sha256sum Kernel-KSU-SUSFS.zip | cut -d' ' -f1 > hash.txt
+
+      - name: Upload to Telegram
+        run: |
+          cd ak3
+          if [ ! -f "Kernel-KSU-SUSFS.zip" ]; then
+            echo "Error: Kernel-KSU-SUSFS.zip tidak ditemukan!"
+            exit 1
+          fi
+          if [ ! -f "hash.txt" ]; then
+            echo "Error: hash.txt tidak ditemukan!"
+            exit 1
+          fi
+          HASH=$(cat hash.txt)
+          CAPTION="🐧 Linux Version: ${KERNEL_VER}
+                   📅 Build Date: ${BUILD_DATE}
+                   📛 KernelSU: ${KSU_VER} ඞ SuSFS: ${SUSFS_VER}
+                   🔰 Compiler: ${CLANG_VER}
+
+            SHA256: ${HASH}
+             if [ -z "${{ secrets.BOT_TOKEN }}" ] || [ -z "${{ secrets.CHAT_ID }}" ]; then
+            echo "Error: BOT_TOKEN atau CHAT_ID belum diset di repository secrets!"
+            exit 1
+          fi
+          curl --fail -F document=@Kernel-KSU-SUSFS.zip \
+               -F caption="${CAPTION}" \
+               "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
