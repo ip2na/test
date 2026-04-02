@@ -105,7 +105,7 @@ jobs:
        exit 1
        fi
 
-       curl --fail -F document=@Kernel-KSU-SUSFS.zip \
+       curl --fail -F document=@Kernel-Vanilla.zip \
        -F caption="Build Success GKI 5.10 Vanilla ThinLTO $(cat checksum.txt)" \
        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
       
