@@ -8,36 +8,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 📥 Checkout
+    - name: Checkout
       uses: actions/checkout@v4
       
-    - name: 💾 Free Disk Space
+    - name: Free Disk Space
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
         sudo apt clean
 
-    - name: 🧰 Install Dependencies
+    - name: Install Dependencies
       run: |
         sudo apt update
         sudo apt install -y \
           git curl wget bc bison flex \
           libssl-dev libelf-dev zip cpio
           
-    - name: ⚡ Setup Clang r498229 (LLVM 17)
+    - name: Setup Clang r498229 (LLVM 17)
       run: |
         wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/ba7da711271d310dda6b5134d8f4448f6a276a27/clang-r498229b.tar.gz
         mkdir clang
         tar -zxf clang-r498229b.tar.gz -C clang
         rm -rf clang-r498229b.tar.gz
 
-    # SOURCE KERNEL
-    - name: 📦 Clone Kernel
+    - name: Clone Kernel
       run: |
         git clone --depth=1 https://github.com/ip2na/android12-5.10-lts.git kernel
 
-    # KSU NEXT + SUSFS
-    - name: 🔥 Setup KernelSU Next + SUSFS
+    - name: Setup KernelSU Next + SUSFS
       run: |
         cd kernel
 
@@ -52,7 +50,6 @@ jobs:
 
         patch -p1 < $kernel_patches/*.patch || true
 
-    # FIX DEFCONFIG
     - name: Inject Config
       run: |
         cd kernel
@@ -95,8 +92,7 @@ jobs:
        
         EOF
 
-    # 🏗️ BUILD
-    - name: 🏗️ Build Kernel
+    - name: Build Kernel
       run: |
         cd kernel
         export PATH="$(pwd)/../clang/bin:$PATH"
@@ -107,28 +103,25 @@ jobs:
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
 
 
-    # 📦 ANYKERNEL (PUNYA KAMU)
-    - name: 📦 Clone AnyKernel3 Custom
+    - name: Clone AnyKernel3 Custom
       run: |
         git clone --depth=1 -b gki-2.0 https://github.com/ip2na/AnyKernel3.git ak3
 
-    - name: 📥 Copy Image
+    - name: Copy Image
       run: |
         cp kernel/out/arch/arm64/boot/Image ak3/
 
-    # 📦 PACK ZIP
-    - name: 📦 Pack ZIP
+    - name: Pack ZIP
       run: |
         cd ak3
         zip -r9 Kernel-KSU-SUSFS.zip * -x "*.git*" -x "*.github*"
 
-    # 🔐 CHECKSUM
-    - name: 🔐 Generate SHA256
+    - name: Generate SHA256
       run: |
         cd ak3
         sha256sum Kernel-KSU-SUSFS.zip > checksum.txt
 
-    - name: 📤 Upload to Telegram
+    - name: Upload to Telegram
       run: |
        cd ak3
 
@@ -148,6 +141,6 @@ jobs:
        fi
 
        curl --fail -F document=@Kernel-KSU-SUSFS.zip \
-       -F caption="Build Success GKI 5.10 KSU Next + SUSFS ThinLTO\n\n$(cat checksum.txt)" \
+       -F caption="Build Success GKI 5.10 KSU Next + SUSFS ThinLTO $(cat checksum.txt)" \
        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
       
