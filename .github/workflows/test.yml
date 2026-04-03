@@ -141,10 +141,10 @@ jobs:
         cd ak3
 
          curl --fail -F document=@Kernel-KSU-SUSFS.zip \
-        -F caption="🌱 Branch: ${{ env.BRANCH }}
-        🐧 Linux version: ${{ env.KERNEL_VER }}
-        ♻️ Latest commit: ${{ env.COMMIT }}
-        ⚙️ Compiler: ${{ env.COMPILER }} 
-        📅 Build date: ${{ env.DATE }}
+        -F caption="🌱 Branch: $env.BRANCH
+        🐧 Linux version: $env.KERNEL_VER
+        ♻️ Latest commit: $env.COMMIT
+        ⚙️ Compiler: $env.COMPILER
+        📅 Build date: $env.DATE
         📦 SHA256: $(cat checksum.txt)" \
           "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
