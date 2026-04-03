@@ -103,7 +103,7 @@ jobs:
         echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
         echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
         echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
-        echo "COMPILER=$($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1 | sed 's/(.*)//')" >> $GITHUB_ENV
+        echo "COMPILER=$($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1)" >> $GITHUB_ENV
         echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3 Custom
@@ -123,8 +123,8 @@ jobs:
       run: |
         cd ak3
         curl --fail -F document=@Kernel-KSU-SUSFS.zip \
-          -F "caption=🌱 Branch: $env.BRANCH
-        🐧 Linux version: $env.KERNEL_VER
+          -F "caption=🌱 Branch: $BRANCH
+        🐧 Linux version: $KERNEL_VER
         📆 Build date : $DATE
         ♻️ Latest commit: $COMMIT
         🔐 KSU commit: $KSU_COMMIT
