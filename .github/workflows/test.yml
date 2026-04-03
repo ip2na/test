@@ -1,4 +1,4 @@
-name: Build GKI 5.10 KSU SUSFS
+name: Build GKI 5.10 KSU SUSFS TEST
 
 on:
   workflow_dispatch:
