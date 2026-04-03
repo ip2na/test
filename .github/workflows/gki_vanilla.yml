@@ -10,7 +10,7 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Free Disk Space
       run: |
         sudo rm -rf /usr/share/dotnet
@@ -20,10 +20,8 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          git curl wget bc bison flex \
-          libssl-dev libelf-dev zip cpio
-          
+        sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+
     - name: Setup google clang 19.0.1
       run: |
         wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz
@@ -38,23 +36,20 @@ jobs:
     - name: Inject Config
       run: |
         cd kernel
-        
         cat >> arch/arm64/configs/gki_defconfig << 'EOF'
-
         CONFIG_MTK_CPU_FREQ=y
         CONFIG_MTK_CPU_DVFS=y
         CONFIG_MTK_SUSPEND=y
         CONFIG_MTK_VCORE_DVFS=y
         CONFIG_MTK_IDLE_BALANCE=y
         CONFIG_MTK_SCHED_DVFS=y
-        # CONFIG_PREEMPT_VOLUNTARY is not set
-        # CONFIG_PREEMPT_NONE is not set 
         CONFIG_ZRAM=y
         CONFIG_ZRAM_WRITEBACK=y
         CONFIG_ZSWAP=y
         CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
         CONFIG_SCHED_TUNE=y
-       
+        # CONFIG_PREEMPT_VOLUNTARY is not set
+        # CONFIG_PREEMPT_NONE is not set 
         EOF
 
     - name: Build Kernel
@@ -63,10 +58,17 @@ jobs:
         export PATH="$(pwd)/../clang/bin:$PATH"
         export KBUILD_BUILD_USER="builder-dev"
         export KBUILD_BUILD_HOST="Anyaanasera"
-
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
 
+    - name: Generate Build Info
+      run: |
+        cd kernel
+        echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+        echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+        echo "COMPILER=$($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1 | sed 's/(.*)//')" >> $GITHUB_ENV
+        echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3 Custom
       run: |
@@ -79,33 +81,17 @@ jobs:
     - name: Pack ZIP
       run: |
         cd ak3
-        zip -r9 kernel-vanilla.zip * -x "*.git*" -x "*.github*"
-
-    - name: Generate SHA256
-      run: |
-        cd ak3
-        sha256sum kernel-vanilla.zip > checksum.txt
+        zip -r9 Kernel-Vanilla.zip * -x "*.git*" -x "*.github*"
 
     - name: Upload to Telegram
       run: |
-       cd ak3
+        cd ak3
+        curl --fail -F document=@Kernel-Vanilla.zip \
+          -F "caption=🌱 Branch: $BRANCH
+        🐧 Linux version: $KERNEL_VER
+        🦎 Version: Vanilla (No KSU/SUSFS)
+        ♻️ Latest commit: $COMMIT
+        ⚙️ Compiler: $COMPILER
 
-       if [ ! -f "kernel-vanilla.zip" ]; then
-       echo "Error: kernel-vanilla.zip tidak ditemukan!"
-       exit 1
-       fi
-
-       if [ ! -f "checksum.txt" ]; then
-       echo "Error: checksum.txt tidak ditemukan!"
-       exit 1
-       fi
-
-       if [ -z "${{ secrets.BOT_TOKEN }}" ] || [ -z "${{ secrets.CHAT_ID }}" ]; then
-       echo "Error: BOT_TOKEN atau CHAT_ID belum diset di repository secrets!"
-       exit 1
-       fi
-
-       curl --fail -F document=@kernel-vanilla.zip \
-       -F caption="Build Success GKI 5.10 vanilla ThinLTO $(cat checksum.txt)" \
-       "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
-      
+        #Anyakernel #vanilla #Gki-5.10\
+         "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
