@@ -22,12 +22,12 @@ jobs:
         sudo apt update
         sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
 
-    - name: Setup google clang 19.0.1
+    - name: Setup google clang 22.0.1
       run: |
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz
+        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/42d2c090c14c9c7f4dfd365ae551e2b959dc775c/clang-r584948b.tar.gz
         mkdir clang
-        tar -zxf clang-r536225.tar.gz -C clang
-        rm -rf clang-r536225.tar.gz
+        tar -zxf clang-r584948b.tar.gz -C clang
+        rm -rf clang-r584948b.tar.gz
 
     - name: Clone android12-5.10-lts (GKI 5.10)
       run: |
