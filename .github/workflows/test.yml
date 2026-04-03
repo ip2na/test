@@ -125,11 +125,11 @@ jobs:
         curl --fail -F document=@Kernel-KSU-SUSFS.zip \
           -F "caption=🌱 Branch: $env.BRANCH
         🐧 Linux version: $env.KERNEL_VER
-        📆 Build date : $env.DATE
-        ♻️ Latest commit: $env.COMMIT
-        🔐 KSU commit: $env.KSU_COMMIT
-        🛡️ SUSFS commit: $env.SUSFS_COMMIT
-        ⚙️ Compiler: $env.COMPILER
+        📆 Build date : $DATE
+        ♻️ Latest commit: $COMMIT
+        🔐 KSU commit: $KSU_COMMIT
+        🛡️ SUSFS commit: $SUSFS_COMMIT
+        ⚙️ Compiler: $COMPILER
 
         #Anyakernel #update #Gki-5.10 #Ksu #susfs" \
           "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
