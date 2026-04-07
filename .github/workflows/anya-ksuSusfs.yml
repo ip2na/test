@@ -122,7 +122,8 @@ jobs:
     - name: Upload to Telegram
       run: |
        cd ak3
-       CAPTION="🌱 Branch: $BRANCH
+       cat > caption.txt << EOF
+       🌱 Branch: $BRANCH
        🐧 Linux version: $KERNEL_VER
        📆 Build date : $DATE
        ♻️ Latest commit: $COMMIT
@@ -130,7 +131,8 @@ jobs:
        🛡️ SUSFS commit: $SUSFS_COMMIT
        ⚙️ Compiler: $COMPILER
 
-       #Anyakernel #update #Gki-5.10 #Ksu #susfs"
-        curl --fail -F document=@Kernel-KSU-SUSFS.zip \
-           -F "caption=$CAPTION" \
-          "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+       #Anyakernel #update #gki-5.10 #ksu #susfs
+       EOF
+       curl --fail -F document=@Kernel-KSU-SUSFS.zip \
+       -F "caption=< caption.txt" \
+       "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
