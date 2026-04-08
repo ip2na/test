@@ -22,12 +22,12 @@ jobs:
         sudo apt update
         sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
 
-    - name: Setup google clang 22.0.1
+    - name: Setup clang 22.1.3
       run: |
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/42d2c090c14c9c7f4dfd365ae551e2b959dc775c/clang-r584948b.tar.gz
-        mkdir clang
-        tar -zxf clang-r584948b.tar.gz -C clang
-        rm -rf clang-r584948b.tar.gz
+        wget https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.3-x86_64.tar.gz
+        tar -zxf llvm-22.1.3-x86_64.tar.gz
+        rm -rf llvm-22.1.3-x86_64.tar.gz
+        echo "CLANG_PATH=$(pwd)/llvm-22.1.3-x86_64/bin" >> $GITHUB_ENV
 
     - name: Clone android12-5.10-lts (GKI 5.10)
       run: |
@@ -55,11 +55,11 @@ jobs:
     - name: Build Kernel
       run: |
         cd kernel
-        export PATH="$(pwd)/../clang/bin:$PATH"
+        export PATH="$CLANG_PATH:$PATH"
         export KBUILD_BUILD_USER="builder-dev"
         export KBUILD_BUILD_HOST="Anyaanasera"
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
 
     - name: Generate Build Info
       run: |
@@ -67,7 +67,7 @@ jobs:
         echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
         echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
         echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
-        echo "COMPILER=$($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1)" >> $GITHUB_ENV
+        echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
         echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3 Custom
@@ -86,12 +86,16 @@ jobs:
     - name: Upload to Telegram
       run: |
         cd ak3
-        curl --fail -F document=@Kernel-Vanilla.zip \
-          -F "caption=🌱 Branch: $BRANCH
+        cat > caption.txt << EOF
+        🌱 Branch: $BRANCH
         🐧 Linux version: $KERNEL_VER
+        📆 Build date: $DATE
         🦎 Version: Vanilla (No KSU/SUSFS)
         ♻️ Latest commit: $COMMIT
         ⚙️ Compiler: $COMPILER
 
-        #Anyakernel #vanilla #Gki-5.10" \
-         "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+        #Anyakernel #vanilla #Gki-5.10
+        EOF
+        curl --fail -F document=@Kernel-Vanilla.zip \
+        -F "caption=< caption.txt" \
+        "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
