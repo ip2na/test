@@ -102,7 +102,7 @@ jobs:
         echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
         echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
         echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
-        echo "COMPILER=$($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1)" >> $GITHUB_ENV
+        echo "COMPILER=$($GITHUB_WORKSPACE/llvm-22.1.3-x86_64/bin/clang --version | head -n 1)" >> $GITHUB_ENV
         echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3 Custom
