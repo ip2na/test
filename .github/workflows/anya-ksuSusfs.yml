@@ -22,12 +22,22 @@ jobs:
         sudo apt update
         sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
 
-    - name: Setup clang 22.1.3
+    - name: Cache Clang 22.1.3
+      id: cache-clang
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/llvm-22.1.3-x86_64
+        key: clang-22.1.3-x86_64
+
+    - name: Setup Clang 22.1.3
+      if: steps.cache-clang.outputs.cache-hit != 'true'
       run: |
         wget https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.3-x86_64.tar.gz
         tar -zxf llvm-22.1.3-x86_64.tar.gz
         rm -rf llvm-22.1.3-x86_64.tar.gz
-        echo "CLANG_PATH=$(pwd)/llvm-22.1.3-x86_64/bin" >> $GITHUB_ENV
+
+    - name: Set Clang PATH
+      run: echo "CLANG_PATH=$(pwd)/llvm-22.1.3-x86_64/bin" >> $GITHUB_ENV
 
     - name: Clone android12-5.10-lts (GKI 5.10)
       run: |
