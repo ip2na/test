@@ -1,4 +1,4 @@
-name: Anya KSU+SUSFS
+name: Anya KSU+SUSFS GF-clang
 
 on:
   workflow_dispatch:
