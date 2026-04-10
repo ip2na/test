@@ -46,7 +46,6 @@ jobs:
     - name: Setup KernelSU Next + SUSFS
       run: |
         cd kernel
-        # Setup KSU Next
         curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
         
         cd KernelSU-Next
