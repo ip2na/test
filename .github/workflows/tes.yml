@@ -1,0 +1,218 @@
+name: Anya KSU+SUSFS TES
+
+on:
+  workflow_dispatch:
+
+env:
+
+  # --- LLVM (kernel.org) ---
+  # CLANG_URL: https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.3-x86_64.tar.gz
+  # CLANG_TYPE: llvm
+
+  # --- Greenforce Clang ---
+  CLANG_URL: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
+  CLANG_TYPE: mkdir
+
+  # --- ZyC Clang ---
+  # CLANG_URL: https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250401-release/Clang-20.0.0git-20250401.tar.gz
+  # CLANG_TYPE: mkdir 
+
+  # --- Google Clang (AOSP) ---
+  # CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz
+  # CLANG_TYPE: mkdir
+
+  RELEASE_TAG: AnyaKernel-GKI-5.10
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set Clang Variables
+      run: |
+        FILENAME=$(basename $CLANG_URL .tar.gz)
+        echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
+        echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
+
+    - name: Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo apt clean
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+
+    - name: Cache Clang
+      id: cache-clang
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/${{ env.CLANG_DIR }}
+        key: ${{ env.CLANG_CACHE_KEY }}
+
+    - name: Setup Clang
+      if: steps.cache-clang.outputs.cache-hit != 'true'
+      run: |
+        if [ "$CLANG_TYPE" = "llvm" ]; then
+          wget $CLANG_URL
+          tar -zxf $(basename $CLANG_URL)
+          rm -rf $(basename $CLANG_URL)    
+
+        else
+          mkdir -p $CLANG_DIR
+          wget -O clang.tar.gz $CLANG_URL
+          tar -zxf clang.tar.gz -C $CLANG_DIR
+          rm -rf clang.tar.gz
+        fi
+
+    - name: Set Clang PATH
+      run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
+
+    - name: Clone android12-5.10-lts (GKI 5.10)
+      run: |
+        git clone --depth=1 https://github.com/ip2na/android12-5.10-lts.git kernel
+
+    - name: Setup KernelSU Next + SUSFS
+      run: |
+        cd kernel
+        curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
+        
+        cd KernelSU-Next
+        echo "KSU_COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        cd ..
+
+        git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 .susfs
+        cd .susfs
+        echo "SUSFS_COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        cd ..
+        
+        kernel_patches="$(pwd)/.susfs/kernel_patches"
+        cp -R $kernel_patches/fs/* ./fs
+        cp -R $kernel_patches/include/* ./include
+        patch -p1 < $kernel_patches/*.patch || true
+
+    - name: Apply All Managers Patch
+      run: |
+        cd kernel
+        echo "Applying Patch for All Managers Support..."
+        curl -LSs "https://raw.githubusercontent.com/ip2na/builder/refs/heads/main/kernel-patched/ksun-allmanager.patch" -o /tmp/ksun-allmanager.patch
+        cd KernelSU-Next && patch -p1 < /tmp/ksun-allmanager.patch && cd ..
+
+    - name: Inject Config
+      run: |
+        cd kernel
+        cat >> arch/arm64/configs/gki_defconfig << 'EOF'
+        CONFIG_KSU=y
+        CONFIG_KSU_MANUAL_HOOK=y
+        CONFIG_KSU_LSM_SECURITY_HOOKS=y
+        CONFIG_KSU_SUSFS=y
+        CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+        CONFIG_KSU_SUSFS_SUS_PATH=y
+        CONFIG_KSU_SUSFS_SUS_MOUNT=y
+        CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+        CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+        CONFIG_KSU_SUSFS_SUS_KSTAT=y
+        CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+        CONFIG_KSU_SUSFS_ENABLE_LOG=y
+        CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+        CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+        CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+        # CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
+        CONFIG_MTK_CPU_FREQ=y
+        CONFIG_MTK_CPU_DVFS=y
+        CONFIG_MTK_SUSPEND=y
+        CONFIG_MTK_VCORE_DVFS=y
+        CONFIG_MTK_IDLE_BALANCE=y
+        CONFIG_MTK_SCHED_DVFS=y
+        CONFIG_ZRAM=y
+        CONFIG_ZRAM_WRITEBACK=y
+        CONFIG_ZSWAP=y
+        CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+        CONFIG_SCHED_TUNE=y
+        # CONFIG_PREEMPT_VOLUNTARY is not set
+        # CONFIG_PREEMPT_NONE is not set 
+        EOF
+
+    - name: Build Kernel
+      run: |
+        cd kernel
+        export PATH="$CLANG_PATH:$PATH"
+        export KBUILD_BUILD_USER="builder-dev"
+        export KBUILD_BUILD_HOST="Anyaanasera"
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
+
+    - name: Generate Build Info
+      run: |
+        cd kernel
+        echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+        echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+        echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
+        echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
+
+    - name: Clone AnyKernel3 Custom
+      run: |
+        git clone --depth=1 -b gki-2.0 https://github.com/ip2na/AnyKernel3.git ak3
+
+    - name: Copy Image
+      run: |
+        cp kernel/out/arch/arm64/boot/Image ak3/
+
+    - name: Pack ZIP
+      run: |
+        cd ak3
+        zip -r9 Kernel-KSU-SUSFS.zip * -x "*.git*" -x "*.github*"
+
+    - name: Upload to Telegram
+      run: |
+       cd ak3
+       cat > caption.txt << EOF
+       🌱 Branch: $BRANCH
+       🐧 Linux version: $KERNEL_VER
+       📆 Build date : $DATE
+       ♻️ Latest commit: $COMMIT
+       🔐 KSU commit: $KSU_COMMIT
+       🛡️ SUSFS commit: $SUSFS_COMMIT
+       ⚙️ Compiler: $COMPILER
+
+       #Anyakernel #update #gki-5.10 #ksu #susfs
+       EOF
+       curl --fail -F document=@Kernel-KSU-SUSFS.zip \
+       -F "caption=< caption.txt" \
+       "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+
+    - name: Delete Old GitHub Release & Tag (if exists)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release delete "$RELEASE_TAG" --yes --cleanup-tag 2>/dev/null || true
+
+    - name: Upload to GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "$RELEASE_TAG" \
+          ak3/Kernel-KSU-SUSFS.zip \
+          --title "Anya Kernel | KSU+SUSFS | GKI 5.10 | $DATE" \
+          --notes "## 🍃 Anya Kernel — KSU Next + SUSFS
+
+        **🌱 Branch:** \`$BRANCH\`
+        **🐧 Linux version:** \`$KERNEL_VER\`
+        **📆 Build date:** \`$DATE\`
+        **♻️ Latest commit:** $COMMIT
+        **🔐 KSU commit:** $KSU_COMMIT
+        **🛡️ SUSFS commit:** $SUSFS_COMMIT
+        **⚙️ Compiler:** $COMPILER
+
+        ---
+        #Anyakernel #gki-5.10 #ksu #susfs" \
+          --latest
