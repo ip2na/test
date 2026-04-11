@@ -94,6 +94,13 @@ jobs:
         cp -R $kernel_patches/include/* ./include
         patch -p1 < $kernel_patches/*.patch || true
 
+    - name: Apply All Managers Patch
+      run: |
+        cd kernel
+        echo "Applying Patch for All Managers Support..."
+        curl -LSs "https://raw.githubusercontent.com/ip2na/builder/refs/heads/main/kernel-patched/ksun-allmanager.patch" -o /tmp/ksun-allmanager.patch
+        cd KernelSU-Next && patch -p1 < /tmp/ksun-allmanager.patch && cd ..
+
     - name: Inject Config
       run: |
         cd kernel
