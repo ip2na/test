@@ -18,7 +18,7 @@ env:
   # CLANG_TYPE: mkdir 
 
   # --- Google Clang (AOSP) ---
-  # CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
+  # CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz
   # CLANG_TYPE: mkdir
 
 jobs:
