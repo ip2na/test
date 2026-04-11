@@ -1,4 +1,4 @@
-name: Anya KSU+SUSFS TES
+name: Anya KSU+SUSFS FX 
 
 on:
   workflow_dispatch:
@@ -172,23 +172,27 @@ jobs:
         cd ak3
         zip -r9 Kernel-KSU-SUSFS.zip * -x "*.git*" -x "*.github*"
 
-    - name: Upload to Telegram
+    - name: Send Changelog to Telegram
       run: |
-       cd ak3
-       cat > caption.txt << EOF
-       🌱 Branch: $BRANCH
-       🐧 Linux version: $KERNEL_VER
-       📆 Build date : $DATE
-       ♻️ Latest commit: $COMMIT
-       🔐 KSU commit: $KSU_COMMIT
-       🛡️ SUSFS commit: $SUSFS_COMMIT
-       ⚙️ Compiler: $COMPILER
+         RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
+         MESSAGE=" <b>Anya Kernel — KSU Next + SUSFS</b>
+         🌱 <b>Branch:</b> <code>$BRANCH</code>
+         🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
+         📆 <b>Build date:</b> <code>$DATE</code>
+         ♻️ <b>Latest commit:</b> $COMMIT
+         🔐 <b>KSU commit:</b> $KSU_COMMIT
+         🛡️ <b>SUSFS commit:</b> $SUSFS_COMMIT
+         ⚙️ <b>Compiler:</b> $COMPILER
 
-       #Anyakernel #update #gki-5.10 #ksu #susfs
-       EOF
-       curl --fail -F document=@Kernel-KSU-SUSFS.zip \
-       -F "caption=< caption.txt" \
-       "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+         #Anyakernel #update #gki510 #ksu #susfs
+
+         📥 <b>Download:</b> <a href=\"$RELEASE_URL\">GitHub Release</a>"
+         curl --fail -s -X POST \
+          "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.CHAT_ID }}" \
+          -d "parse_mode=HTML" \
+          -d "disable_web_page_preview=true" \
+          --data-urlencode "text=$MESSAGE"
 
     - name: Delete Old GitHub Release & Tag (if exists)
       env:
@@ -203,7 +207,7 @@ jobs:
         gh release create "$RELEASE_TAG" \
           ak3/Kernel-KSU-SUSFS.zip \
           --title "Anya Kernel | KSU+SUSFS | GKI 5.10 | $DATE" \
-          --notes "## 🍃 Anya Kernel — KSU Next + SUSFS
+          --notes "## 🌸 Anya Kernel — KSU Next + SUSFS
 
         **🌱 Branch:** \`$BRANCH\`
         **🐧 Linux version:** \`$KERNEL_VER\`
