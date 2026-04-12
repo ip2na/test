@@ -21,8 +21,6 @@ env:
   # CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz
   # CLANG_TYPE: mkdir
 
-  RELEASE_TAG: AnyaKernel-GKI-5.10
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,6 +31,9 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+
+    - name: Set Build Tag
+      run: echo "RELEASE_TAG=AnyaKernel-GKI-5.10-${{ github.run_number }}" >> $GITHUB_ENV
 
     - name: Set Clang Variables
       run: |
@@ -194,11 +195,16 @@ jobs:
           -d "disable_web_page_preview=true" \
           --data-urlencode "text=$MESSAGE"
 
-    - name: Delete Old GitHub Release & Tag (if exists)
+    - name: Cleanup Old Releases (keep latest 25)
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release delete "$RELEASE_TAG" --yes --cleanup-tag 2>/dev/null || true
+        RELEASES=$(gh release list --limit 100 --json tagName,createdAt \
+          --jq 'sort_by(.createdAt) | reverse | .[25:] | .[].tagName')
+        for TAG in $RELEASES; do
+          echo "Deleting old release: $TAG"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+        done
 
     - name: Upload to GitHub Release
       env:
