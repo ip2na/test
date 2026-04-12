@@ -6,7 +6,7 @@ on:
       commit_sha:
         description: 'Commit SHA to cherry-pick'
         required: true
-        default: '4e6853851fea9587fd7baba66972c416acf05db4'
+        default: '45381182fd38ebcb446c037f25ed073e11f7fc6d'
       source_repo:
         description: 'Source repo URL'
         required: true
