@@ -42,7 +42,13 @@ Flashing a custom kernel may void your warranty. Backup your data before proceed
 - [Google AOSP Clang](https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/) by Google
 
 ## Disclaimer
+ 
+- This project is provided as-is without any warranty.
+- Flashing custom kernels may void your warranty.
+- You are responsible for any damage to your device.
 
-This project is provided as-is without any warranty.
-Flashing custom kernels may void your warranty.
-You are responsible for any damage to your device.
+
+## License
+
+This project is licensed under the [GPL-2.0 License](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
+All kernel modifications follow the terms of the GNU General Public License v2.
