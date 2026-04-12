@@ -5,6 +5,7 @@ Custom kernel for Android GKI 5.10.x devices with KernelSU support.
 ## Features
 
 - KernelSU integrated
+- SUSFS integrated
 - Built with Greenforce Clang, LLVM Slim, Google AOSP Clang, and Zyc Clang
 - AnyKernel3 flashable zip
 
