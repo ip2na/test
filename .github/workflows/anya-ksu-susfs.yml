@@ -1,4 +1,4 @@
-name: Anya KSU+SUSFS TS
+name: Anya KSU+SUSFS
 
 on:
   workflow_dispatch:
