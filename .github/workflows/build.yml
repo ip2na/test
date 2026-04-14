@@ -1,0 +1,225 @@
+name: Anya Kernel Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - susfs
+          - vanilla
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: KSU+SUSFS
+            type: susfs
+            clang_url: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
+            clang_type: mkdir
+            zip_name: Kernel-KSU-SUSFS.zip
+            release_prefix: AnyaKernel-GKI-5.10
+            build_host: anyaprjkt
+            config_secret: CONFIG_SCRIPT
+            telegram_version: "KSU Next + SUSFS"
+            telegram_tags: "#Anyakernel #update #gki510 #ksu #susfs"
+            release_tags: "#Anyakernel #gki-5.10 #ksu #susfs"
+
+          - name: Vanilla
+            type: vanilla
+            clang_url: https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.3-x86_64.tar.gz
+            clang_type: llvm
+            zip_name: Kernel-Vanilla.zip
+            release_prefix: AnyaKernel-Vanilla-5.10
+            build_host: Anyaanasera
+            config_secret: VANILLA_CONFIG_SCRIPT
+            telegram_version: "Vanilla (No KSU/SUSFS)"
+            telegram_tags: "#Anyakernel #vanilla #gki510"
+            release_tags: "#Anyakernel #vanilla #gki-5.10"
+
+      if: >
+       github.event.inputs.build_type == 'all' ||
+       github.event.inputs.build_type == matrix.type
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set Build Tag
+      run: echo "RELEASE_TAG=${{ matrix.release_prefix }}-${{ github.run_number }}" >> $GITHUB_ENV
+
+    - name: Set Clang Variables
+      run: |
+        FILENAME=$(basename ${{ matrix.clang_url }} .tar.gz)
+        echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
+        echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
+
+    - name: Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo apt clean
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+
+    - name: Cache Clang
+      id: cache-clang
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/${{ env.CLANG_DIR }}
+        key: ${{ env.CLANG_CACHE_KEY }}
+
+    - name: Setup Clang
+      if: steps.cache-clang.outputs.cache-hit != 'true'
+      run: |
+        if [ "${{ matrix.clang_type }}" = "llvm" ]; then
+          wget ${{ matrix.clang_url }}
+          tar -zxf $(basename ${{ matrix.clang_url }})
+          rm -rf $(basename ${{ matrix.clang_url }})
+        else
+          mkdir -p $CLANG_DIR
+          wget -O clang.tar.gz ${{ matrix.clang_url }}
+          tar -zxf clang.tar.gz -C $CLANG_DIR
+          rm -rf clang.tar.gz
+        fi
+
+    - name: Set Clang PATH
+      run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
+
+    - name: Clone Kernel Source
+      run: |
+        git clone --depth=1 ${{ secrets.KERNEL_SOURCE }} kernel
+
+    - name: Setup KernelSU Next + SUSFS
+      if: matrix.type == 'susfs'
+      run: |
+        cd kernel
+        curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
+
+        cd KernelSU-Next
+        echo "KSU_COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        cd ..
+
+        git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 .susfs
+        cd .susfs
+        echo "SUSFS_COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        cd ..
+
+        kernel_patches="$(pwd)/.susfs/kernel_patches"
+        cp -R $kernel_patches/fs/* ./fs
+        cp -R $kernel_patches/include/* ./include
+        patch -p1 < $kernel_patches/*.patch || true
+
+    - name: Apply All Managers Patch
+      if: matrix.type == 'susfs'
+      run: |
+        cd kernel
+        echo "Applying Patch for All Managers Support"
+        curl -LSs "${{ secrets.PATCH_URL }}" -o /tmp/ksun-allmanager.patch
+        cd KernelSU-Next && patch -p1 < /tmp/ksun-allmanager.patch && cd ..
+
+    - name: Inject Config
+      run: |
+        cd kernel
+        echo "${{ secrets[matrix.config_secret] }}" | base64 -d | bash
+
+    - name: Build Kernel
+      run: |
+        cd kernel
+        export PATH="$CLANG_PATH:$PATH"
+        export KBUILD_BUILD_USER="builder-dev"
+        export KBUILD_BUILD_HOST="${{ matrix.build_host }}"
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
+
+    - name: Generate Build Info
+      run: |
+        cd kernel
+        echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+        echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+        echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+        echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
+        echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
+
+    - name: Clone AnyKernel3
+      run: |
+        git clone --depth=1 -b gki-2.0 ${{ secrets.AK3_REPO }} ak3
+
+    - name: Copy Image
+      run: |
+        cp kernel/out/arch/arm64/boot/Image ak3/
+
+    - name: Pack ZIP
+      run: |
+        cd ak3
+        zip -r9 ${{ matrix.zip_name }} * -x "*.git*" -x "*.github*"
+
+    - name: Send Changelog to Telegram
+      run: |
+        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
+        MESSAGE="<b>Anya Kernel — ${{ matrix.telegram_version }}</b>
+        🌱 <b>Branch:</b> <code>$BRANCH</code>
+        🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
+        📆 <b>Build date:</b> <code>$DATE</code>
+        🦎 <b>Version:</b> ${{ matrix.telegram_version }}
+        ♻️ <b>Latest commit:</b> $COMMIT
+        ${{ matrix.type == 'susfs' && format('🔐 <b>KSU commit:</b> {0}', env.KSU_COMMIT) || '' }}
+        ${{ matrix.type == 'susfs' && format('🛡️ <b>SUSFS commit:</b> {0}', env.SUSFS_COMMIT) || '' }}
+        ⚙️ <b>Compiler:</b> $COMPILER
+
+        ${{ matrix.telegram_tags }}
+
+        📥 <b>Download:</b> <a href=\"$RELEASE_URL\">GitHub Release</a>"
+        curl --fail -s -X POST \
+          "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.CHAT_ID }}" \
+          -d "parse_mode=HTML" \
+          -d "disable_web_page_preview=true" \
+          --data-urlencode "text=$MESSAGE"
+
+    - name: Cleanup Old Releases (keep latest 25)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        RELEASES=$(gh release list --limit 100 --json tagName,createdAt \
+          --jq 'sort_by(.createdAt) | reverse | .[25:] | .[].tagName')
+        for TAG in $RELEASES; do
+          echo "Deleting old release: $TAG"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+        done
+
+    - name: Upload to GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "$RELEASE_TAG" \
+          ak3/${{ matrix.zip_name }} \
+          --title "Anya Kernel | ${{ matrix.telegram_version }} | GKI 5.10 | $DATE" \
+          --notes "## 🌸 Anya Kernel — ${{ matrix.telegram_version }}
+
+        **🌱 Branch:** \`$BRANCH\`
+        **🐧 Linux version:** \`$KERNEL_VER\`
+        **📆 Build date:** \`$DATE\`
+        **🦎 Version:** ${{ matrix.telegram_version }}
+        **♻️ Latest commit:** $COMMIT
+        ${{ matrix.type == 'susfs' && format('**🔐 KSU commit:** {0}', env.KSU_COMMIT) || '' }}
+        ${{ matrix.type == 'susfs' && format('**🛡️ SUSFS commit:** {0}', env.SUSFS_COMMIT) || '' }}
+        **⚙️ Compiler:** $COMPILER
+
+        ---
+        ${{ matrix.release_tags }}" \
+          --latest
