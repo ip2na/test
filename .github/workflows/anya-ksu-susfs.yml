@@ -102,8 +102,7 @@ jobs:
     - name: Apply All Managers Patch
       run: |
         cd kernel
-        echo "Applying Patch for All Managers Support..."
-        # PATCH_URL secret = URL raw patch file kamu (dari repo private)
+        echo "Applying Patch for All Managers Support"
         curl -LSs "${{ secrets.PATCH_URL }}" -o /tmp/ksun-allmanager.patch
         cd KernelSU-Next && patch -p1 < /tmp/ksun-allmanager.patch && cd ..
 
