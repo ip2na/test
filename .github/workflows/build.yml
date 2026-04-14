@@ -31,7 +31,6 @@ jobs:
             zip_name: Kernel-KSU-SUSFS.zip
             release_prefix: AnyaKernel-GKI-5.10
             build_host: anyaprjkt
-            config_secret: CONFIG_SCRIPT
             telegram_version: "KSU Next + SUSFS"
             telegram_tags: "#Anyakernel #update #gki510 #ksu #susfs"
             release_tags: "#Anyakernel #gki-5.10 #ksu #susfs"
@@ -43,40 +42,52 @@ jobs:
             zip_name: Kernel-Vanilla.zip
             release_prefix: AnyaKernel-Vanilla-5.10
             build_host: Anyaanasera
-            config_secret: VANILLA_CONFIG_SCRIPT
             telegram_version: "Vanilla (No KSU/SUSFS)"
             telegram_tags: "#Anyakernel #vanilla #gki510"
             release_tags: "#Anyakernel #vanilla #gki-5.10"
 
-      if: >
-       github.event.inputs.build_type == 'all' ||
-       github.event.inputs.build_type == matrix.type
-
     steps:
+    - name: Check Build Type
+      id: check
+      run: |
+        INPUT="${{ github.event.inputs.build_type }}"
+        TYPE="${{ matrix.type }}"
+        if [ "$INPUT" = "all" ] || [ "$INPUT" = "$TYPE" ]; then
+          echo "should_run=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_run=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Checkout
+      if: steps.check.outputs.should_run == 'true'
       uses: actions/checkout@v4
 
     - name: Set Build Tag
+      if: steps.check.outputs.should_run == 'true'
       run: echo "RELEASE_TAG=${{ matrix.release_prefix }}-${{ github.run_number }}" >> $GITHUB_ENV
 
     - name: Set Clang Variables
+      if: steps.check.outputs.should_run == 'true'
       run: |
         FILENAME=$(basename ${{ matrix.clang_url }} .tar.gz)
         echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
         echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
 
     - name: Free Disk Space
+      if: steps.check.outputs.should_run == 'true'
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
         sudo apt clean
 
     - name: Install Dependencies
+      if: steps.check.outputs.should_run == 'true'
       run: |
         sudo apt update
         sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
 
     - name: Cache Clang
+      if: steps.check.outputs.should_run == 'true'
       id: cache-clang
       uses: actions/cache@v4
       with:
@@ -84,7 +95,7 @@ jobs:
         key: ${{ env.CLANG_CACHE_KEY }}
 
     - name: Setup Clang
-      if: steps.cache-clang.outputs.cache-hit != 'true'
+      if: steps.check.outputs.should_run == 'true' && steps.cache-clang.outputs.cache-hit != 'true'
       run: |
         if [ "${{ matrix.clang_type }}" = "llvm" ]; then
           wget ${{ matrix.clang_url }}
@@ -98,14 +109,16 @@ jobs:
         fi
 
     - name: Set Clang PATH
+      if: steps.check.outputs.should_run == 'true'
       run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
 
     - name: Clone Kernel Source
+      if: steps.check.outputs.should_run == 'true'
       run: |
         git clone --depth=1 ${{ secrets.KERNEL_SOURCE }} kernel
 
     - name: Setup KernelSU Next + SUSFS
-      if: matrix.type == 'susfs'
+      if: steps.check.outputs.should_run == 'true' && matrix.type == 'susfs'
       run: |
         cd kernel
         curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s dev-susfs
@@ -125,19 +138,24 @@ jobs:
         patch -p1 < $kernel_patches/*.patch || true
 
     - name: Apply All Managers Patch
-      if: matrix.type == 'susfs'
+      if: steps.check.outputs.should_run == 'true' && matrix.type == 'susfs'
       run: |
         cd kernel
-        echo "Applying Patch for All Managers Support"
         curl -LSs "${{ secrets.PATCH_URL }}" -o /tmp/ksun-allmanager.patch
         cd KernelSU-Next && patch -p1 < /tmp/ksun-allmanager.patch && cd ..
 
     - name: Inject Config
+      if: steps.check.outputs.should_run == 'true'
       run: |
         cd kernel
-        echo "${{ secrets[matrix.config_secret] }}" | base64 -d | bash
+        if [ "${{ matrix.type }}" = "susfs" ]; then
+          echo "${{ secrets.CONFIG_SCRIPT }}" | base64 -d | bash
+        else
+          echo "${{ secrets.VANILLA_CONFIG_SCRIPT }}" | base64 -d | bash
+        fi
 
     - name: Build Kernel
+      if: steps.check.outputs.should_run == 'true'
       run: |
         cd kernel
         export PATH="$CLANG_PATH:$PATH"
@@ -147,6 +165,7 @@ jobs:
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
 
     - name: Generate Build Info
+      if: steps.check.outputs.should_run == 'true'
       run: |
         cd kernel
         echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
@@ -156,29 +175,38 @@ jobs:
         echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3
+      if: steps.check.outputs.should_run == 'true'
       run: |
         git clone --depth=1 -b gki-2.0 ${{ secrets.AK3_REPO }} ak3
 
     - name: Copy Image
+      if: steps.check.outputs.should_run == 'true'
       run: |
         cp kernel/out/arch/arm64/boot/Image ak3/
 
     - name: Pack ZIP
+      if: steps.check.outputs.should_run == 'true'
       run: |
         cd ak3
         zip -r9 ${{ matrix.zip_name }} * -x "*.git*" -x "*.github*"
 
     - name: Send Changelog to Telegram
+      if: steps.check.outputs.should_run == 'true'
       run: |
         RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
+        if [ "${{ matrix.type }}" = "susfs" ]; then
+          EXTRA_INFO="🔐 <b>KSU commit:</b> $KSU_COMMIT
+        🛡️ <b>SUSFS commit:</b> $SUSFS_COMMIT"
+        else
+          EXTRA_INFO=""
+        fi
         MESSAGE="<b>Anya Kernel — ${{ matrix.telegram_version }}</b>
         🌱 <b>Branch:</b> <code>$BRANCH</code>
         🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
         📆 <b>Build date:</b> <code>$DATE</code>
         🦎 <b>Version:</b> ${{ matrix.telegram_version }}
         ♻️ <b>Latest commit:</b> $COMMIT
-        ${{ matrix.type == 'susfs' && format('🔐 <b>KSU commit:</b> {0}', env.KSU_COMMIT) || '' }}
-        ${{ matrix.type == 'susfs' && format('🛡️ <b>SUSFS commit:</b> {0}', env.SUSFS_COMMIT) || '' }}
+        $EXTRA_INFO
         ⚙️ <b>Compiler:</b> $COMPILER
 
         ${{ matrix.telegram_tags }}
@@ -192,6 +220,7 @@ jobs:
           --data-urlencode "text=$MESSAGE"
 
     - name: Cleanup Old Releases (keep latest 25)
+      if: steps.check.outputs.should_run == 'true'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -203,9 +232,16 @@ jobs:
         done
 
     - name: Upload to GitHub Release
+      if: steps.check.outputs.should_run == 'true'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        if [ "${{ matrix.type }}" = "susfs" ]; then
+          EXTRA_NOTES="**🔐 KSU commit:** $KSU_COMMIT
+        **🛡️ SUSFS commit:** $SUSFS_COMMIT"
+        else
+          EXTRA_NOTES=""
+        fi
         gh release create "$RELEASE_TAG" \
           ak3/${{ matrix.zip_name }} \
           --title "Anya Kernel | ${{ matrix.telegram_version }} | GKI 5.10 | $DATE" \
@@ -216,8 +252,7 @@ jobs:
         **📆 Build date:** \`$DATE\`
         **🦎 Version:** ${{ matrix.telegram_version }}
         **♻️ Latest commit:** $COMMIT
-        ${{ matrix.type == 'susfs' && format('**🔐 KSU commit:** {0}', env.KSU_COMMIT) || '' }}
-        ${{ matrix.type == 'susfs' && format('**🛡️ SUSFS commit:** {0}', env.SUSFS_COMMIT) || '' }}
+        $EXTRA_NOTES
         **⚙️ Compiler:** $COMPILER
 
         ---
