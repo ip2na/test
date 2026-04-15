@@ -1,4 +1,4 @@
-name: Anya Kernel TES
+name: Anya Kernel - Staging
 
 on:
   workflow_dispatch:
@@ -36,21 +36,21 @@ jobs:
         include:
           - name: KSU+SUSFS
             type: susfs
-            zip_name: Kernel-KSU-SUSFS.zip
-            release_prefix: AnyaKernel-GKI-5.10
+            zip_name: Kernel-KSU-SUSFS-Staging.zip
+            release_prefix: AnyaKernel-GKI-5.10-Staging
             build_host: anyaprjkt
-            telegram_version: "KSU Next + SUSFS"
-            telegram_tags: "#Anyakernel #update #gki510 #ksu #susfs"
-            release_tags: "#Anyakernel #gki-5.10 #ksu #susfs"
+            telegram_version: "KSU Next + SUSFS [STAGING]"
+            telegram_tags: "#Anyakernel #staging #gki510 #ksu #susfs"
+            release_tags: "#Anyakernel #staging #gki-5.10 #ksu #susfs"
 
           - name: Vanilla
             type: vanilla
-            zip_name: Kernel-Vanilla.zip
-            release_prefix: AnyaKernel-Vanilla-5.10
+            zip_name: Kernel-Vanilla-Staging.zip
+            release_prefix: AnyaKernel-Vanilla-5.10-Staging
             build_host: Anyaanasera
-            telegram_version: "Vanilla (No KSU/SUSFS)"
-            telegram_tags: "#Anyakernel #vanilla #gki510"
-            release_tags: "#Anyakernel #vanilla #gki-5.10"
+            telegram_version: "Vanilla (No KSU/SUSFS) [STAGING]"
+            telegram_tags: "#Anyakernel #staging #vanilla #gki510"
+            release_tags: "#Anyakernel #staging #vanilla #gki-5.10"
 
     steps:
     - name: Check Build Type
@@ -97,7 +97,8 @@ jobs:
 
     - name: Set Build Tag
       if: steps.check.outputs.should_run == 'true'
-      run: echo "RELEASE_TAG=${{ matrix.release_prefix }}-${{ github.run_number }}" >> $GITHUB_ENV
+      run: |
+        echo "RELEASE_TAG=${{ matrix.release_prefix }}-${{ github.run_number }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
     - name: Free Disk Space
       if: steps.check.outputs.should_run == 'true'
@@ -138,7 +139,7 @@ jobs:
       if: steps.check.outputs.should_run == 'true'
       run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
 
-    - name: Clone Kernel Source
+    - name: Clone Kernel Source (branch staging)
       if: steps.check.outputs.should_run == 'true'
       run: |
         git clone --branch staging --depth=1 ${{ secrets.KERNEL_SOURCE }} kernel
@@ -226,8 +227,10 @@ jobs:
         else
           EXTRA_INFO=""
         fi
-        MESSAGE="<b>Anya Kernel — ${{ matrix.telegram_version }}</b>
-        🌱 <b>Branch:</b> <code>$BRANCH</code>
+        MESSAGE="⚠️ <b>[STAGING BUILD]</b>
+
+        <b>Anya Kernel — ${{ matrix.telegram_version }}</b>
+        🌿 <b>Branch:</b> <code>staging</code>
         🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
         📆 <b>Build date:</b> <code>$DATE</code>
         🦎 <b>Version:</b> ${{ matrix.telegram_version }}
@@ -270,10 +273,12 @@ jobs:
         fi
         gh release create "$RELEASE_TAG" \
           ak3/${{ matrix.zip_name }} \
-          --title "Anya Kernel | ${{ matrix.telegram_version }} | GKI 5.10 | $DATE" \
-          --notes "## 🌸 Anya Kernel — ${{ matrix.telegram_version }}
+          --title "⚠️ [STAGING] Anya Kernel | ${{ matrix.telegram_version }} | GKI 5.10 | $DATE" \
+          --notes "## ⚠️ STAGING BUILD — Anya Kernel — ${{ matrix.telegram_version }}
 
-        **🌱 Branch:** \`$BRANCH\`
+        > Build ini berasal dari branch **staging**. Bukan rilis stabil.
+
+        **🌿 Branch:** \`staging\`
         **🐧 Linux version:** \`$KERNEL_VER\`
         **📆 Build date:** \`$DATE\`
         **🦎 Version:** ${{ matrix.telegram_version }}
@@ -283,4 +288,7 @@ jobs:
 
         ---
         ${{ matrix.release_tags }}" \
-          --latest
+          --prerelease \
+        || gh release upload "$RELEASE_TAG" \
+          ak3/${{ matrix.zip_name }} \
+          --clobber
