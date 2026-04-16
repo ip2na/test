@@ -1,8 +1,16 @@
-name: Anya Kernel - Staging
+name: Anya Kernel Matrix FX
 
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: "Kernel source branch"
+        required: true
+        default: "main"
+        type: choice
+        options:
+          - main
+          - staging
       build_type:
         description: "Build type to run"
         required: true
@@ -36,21 +44,25 @@ jobs:
         include:
           - name: KSU+SUSFS
             type: susfs
-            zip_name: Kernel-KSU-SUSFS-Staging.zip
-            release_prefix: AnyaKernel-GKI-5.10-Staging
+            zip_suffix: Kernel-KSU-SUSFS
+            release_base: AnyaKernel-GKI-5.10
             build_host: anyaprjkt
-            telegram_version: "KSU Next + SUSFS [STAGING]"
-            telegram_tags: "#Anyakernel #staging #gki510 #ksu #susfs"
-            release_tags: "#Anyakernel #staging #gki-5.10 #ksu #susfs"
+            telegram_version_label: "KSU Next + SUSFS"
+            telegram_tags_main: "#Anyakernel #update #gki510 #ksu #susfs"
+            telegram_tags_staging: "#Anyakernel #staging #gki510 #ksu #susfs"
+            release_tags_main: "#Anyakernel #gki-5.10 #ksu #susfs"
+            release_tags_staging: "#Anyakernel #staging #gki-5.10 #ksu #susfs"
 
           - name: Vanilla
             type: vanilla
-            zip_name: Kernel-Vanilla-Staging.zip
-            release_prefix: AnyaKernel-Vanilla-5.10-Staging
+            zip_suffix: Kernel-Vanilla
+            release_base: AnyaKernel-Vanilla-5.10
             build_host: Anyaanasera
-            telegram_version: "Vanilla (No KSU/SUSFS) [STAGING]"
-            telegram_tags: "#Anyakernel #staging #vanilla #gki510"
-            release_tags: "#Anyakernel #staging #vanilla #gki-5.10"
+            telegram_version_label: "Vanilla (No KSU/SUSFS)"
+            telegram_tags_main: "#Anyakernel #vanilla #gki510"
+            telegram_tags_staging: "#Anyakernel #staging #vanilla #gki510"
+            release_tags_main: "#Anyakernel #vanilla #gki-5.10"
+            release_tags_staging: "#Anyakernel #staging #vanilla #gki-5.10"
 
     steps:
     - name: Check Build Type
@@ -62,6 +74,29 @@ jobs:
           echo "should_run=true" >> $GITHUB_OUTPUT
         else
           echo "should_run=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Resolve Branch-aware Variables
+      if: steps.check.outputs.should_run == 'true'
+      run: |
+        BRANCH_INPUT="${{ github.event.inputs.branch }}"
+
+        if [ "$BRANCH_INPUT" = "staging" ]; then
+          echo "IS_STAGING=true" >> $GITHUB_ENV
+          echo "KERNEL_BRANCH=staging" >> $GITHUB_ENV
+          echo "ZIP_NAME=${{ matrix.zip_suffix }}-Staging.zip" >> $GITHUB_ENV
+          echo "RELEASE_PREFIX=${{ matrix.release_base }}-Staging" >> $GITHUB_ENV
+          echo "TELEGRAM_VERSION=${{ matrix.telegram_version_label }} [STAGING]" >> $GITHUB_ENV
+          echo "TELEGRAM_TAGS=${{ matrix.telegram_tags_staging }}" >> $GITHUB_ENV
+          echo "RELEASE_TAGS=${{ matrix.release_tags_staging }}" >> $GITHUB_ENV
+        else
+          echo "IS_STAGING=false" >> $GITHUB_ENV
+          echo "KERNEL_BRANCH=main" >> $GITHUB_ENV
+          echo "ZIP_NAME=${{ matrix.zip_suffix }}.zip" >> $GITHUB_ENV
+          echo "RELEASE_PREFIX=${{ matrix.release_base }}" >> $GITHUB_ENV
+          echo "TELEGRAM_VERSION=${{ matrix.telegram_version_label }}" >> $GITHUB_ENV
+          echo "TELEGRAM_TAGS=${{ matrix.telegram_tags_main }}" >> $GITHUB_ENV
+          echo "RELEASE_TAGS=${{ matrix.release_tags_main }}" >> $GITHUB_ENV
         fi
 
     - name: Set Clang Variables
@@ -98,7 +133,11 @@ jobs:
     - name: Set Build Tag
       if: steps.check.outputs.should_run == 'true'
       run: |
-        echo "RELEASE_TAG=${{ matrix.release_prefix }}-${{ github.run_number }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+        if [ "$IS_STAGING" = "true" ]; then
+          echo "RELEASE_TAG=${RELEASE_PREFIX}-${{ github.run_number }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+        else
+          echo "RELEASE_TAG=${RELEASE_PREFIX}-${{ github.run_number }}" >> $GITHUB_ENV
+        fi
 
     - name: Free Disk Space
       if: steps.check.outputs.should_run == 'true'
@@ -139,10 +178,10 @@ jobs:
       if: steps.check.outputs.should_run == 'true'
       run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
 
-    - name: Clone Kernel Source (branch staging)
+    - name: Clone Kernel Source
       if: steps.check.outputs.should_run == 'true'
       run: |
-        git clone --branch staging --depth=1 ${{ secrets.KERNEL_SOURCE }} kernel
+        git clone --branch $KERNEL_BRANCH --depth=1 ${{ secrets.KERNEL_SOURCE }} kernel
 
     - name: Setup KernelSU Next + SUSFS
       if: steps.check.outputs.should_run == 'true' && matrix.type == 'susfs'
@@ -215,7 +254,7 @@ jobs:
       if: steps.check.outputs.should_run == 'true'
       run: |
         cd ak3
-        zip -r9 ${{ matrix.zip_name }} * -x "*.git*" -x "*.github*"
+        zip -r9 $ZIP_NAME * -x "*.git*" -x "*.github*"
 
     - name: Send Changelog to Telegram
       if: steps.check.outputs.should_run == 'true'
@@ -227,18 +266,23 @@ jobs:
         else
           EXTRA_INFO=""
         fi
-        MESSAGE="⚠️ <b>[STAGING BUILD]</b>
+        if [ "$IS_STAGING" = "true" ]; then
+          STAGING_HEADER="⚠️ <b>[STAGING BUILD]</b>
 
-        <b>Anya Kernel — ${{ matrix.telegram_version }}</b>
-        🌿 <b>Branch:</b> <code>staging</code>
+        "
+        else
+          STAGING_HEADER=""
+        fi
+        MESSAGE="${STAGING_HEADER}<b>Anya Kernel — $TELEGRAM_VERSION</b>
+        🌱 <b>Branch:</b> <code>$BRANCH</code>
         🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
         📆 <b>Build date:</b> <code>$DATE</code>
-        🦎 <b>Version:</b> ${{ matrix.telegram_version }}
+        🦎 <b>Version:</b> $TELEGRAM_VERSION
         ♻️ <b>Latest commit:</b> $COMMIT
         $EXTRA_INFO
         ⚙️ <b>Compiler:</b> $COMPILER
 
-        ${{ matrix.telegram_tags }}
+        $TELEGRAM_TAGS
 
         📥 <b>Download:</b> <a href=\"$RELEASE_URL\">GitHub Release</a>"
         curl --fail -s -X POST \
@@ -271,24 +315,46 @@ jobs:
         else
           EXTRA_NOTES=""
         fi
-        gh release create "$RELEASE_TAG" \
-          ak3/${{ matrix.zip_name }} \
-          --title "⚠️ [STAGING] Anya Kernel | ${{ matrix.telegram_version }} | GKI 5.10 | $DATE" \
-          --notes "## ⚠️ STAGING BUILD — Anya Kernel — ${{ matrix.telegram_version }}
 
-        > Build ini berasal dari branch **staging**. Bukan rilis stabil.
+        if [ "$IS_STAGING" = "true" ]; then
+          RELEASE_TITLE="⚠️ [STAGING] Anya Kernel | $TELEGRAM_VERSION | GKI 5.10 | $DATE"
+          RELEASE_NOTES="## ⚠️ STAGING BUILD — Anya Kernel — $TELEGRAM_VERSION
 
-        **🌿 Branch:** \`staging\`
+        > This build is from the **staging** branch. It is not a stable release.
+
+        **🌿 Branch:** \`$BRANCH\`
         **🐧 Linux version:** \`$KERNEL_VER\`
         **📆 Build date:** \`$DATE\`
-        **🦎 Version:** ${{ matrix.telegram_version }}
+        **🦎 Version:** $TELEGRAM_VERSION
         **♻️ Latest commit:** $COMMIT
         $EXTRA_NOTES
         **⚙️ Compiler:** $COMPILER
 
         ---
-        ${{ matrix.release_tags }}" \
-          --prerelease \
-        || gh release upload "$RELEASE_TAG" \
-          ak3/${{ matrix.zip_name }} \
-          --clobber
+        $RELEASE_TAGS"
+          gh release create "$RELEASE_TAG" \
+            ak3/$ZIP_NAME \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES" \
+            --prerelease \
+          || gh release upload "$RELEASE_TAG" ak3/$ZIP_NAME --clobber
+        else
+          RELEASE_TITLE="Anya Kernel | $TELEGRAM_VERSION | GKI 5.10 | $DATE"
+          RELEASE_NOTES="## 🌸 Anya Kernel — $TELEGRAM_VERSION
+
+        **🌱 Branch:** \`$BRANCH\`
+        **🐧 Linux version:** \`$KERNEL_VER\`
+        **📆 Build date:** \`$DATE\`
+        **🦎 Version:** $TELEGRAM_VERSION
+        **♻️ Latest commit:** $COMMIT
+        $EXTRA_NOTES
+        **⚙️ Compiler:** $COMPILER
+
+        ---
+        $RELEASE_TAGS"
+          gh release create "$RELEASE_TAG" \
+            ak3/$ZIP_NAME \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES" \
+            --latest
+        fi
