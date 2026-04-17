@@ -227,6 +227,7 @@ jobs:
         export PATH="$CLANG_PATH:$PATH"
         export KBUILD_BUILD_USER="builder-dev"
         export KBUILD_BUILD_HOST="${{ matrix.build_host }}"
+        export KBUILD_BUILD_TIMESTAMP="$(TZ=Asia/Jakarta date)"
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
 
@@ -238,7 +239,7 @@ jobs:
         echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
         echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
         echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
-        echo "DATE=$(date "+%d%m%y")" >> $GITHUB_ENV
+        echo "DATE=$(TZ=Asia/Jakarta date "+%d/%m/%Y %H:%M WIB")" >> $GITHUB_ENV
 
     - name: Clone AnyKernel3
       if: steps.check.outputs.should_run == 'true'
