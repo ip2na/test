@@ -227,7 +227,6 @@ jobs:
         export PATH="$CLANG_PATH:$PATH"
         export KBUILD_BUILD_USER="builder-dev"
         export KBUILD_BUILD_HOST="${{ matrix.build_host }}"
-        export KBUILD_BUILD_TIMESTAMP="$(TZ=Asia/Jakarta date)"
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image
 
