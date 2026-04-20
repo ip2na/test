@@ -213,11 +213,11 @@ jobs:
     - name: Inject Config
       if: steps.check.outputs.should_run == 'true'
       run: |
-        cd kernel
+        DEFCONFIG="kernel/arch/arm64/configs/gki_defconfig"
         if [ "${{ matrix.type }}" = "susfs" ]; then
-          echo "${{ secrets.CONFIG_SCRIPT }}" | base64 -d | bash
+          printf '%s\n' "${{ secrets.CONFIG_LINES_SUSFS }}" >> "$DEFCONFIG"
         else
-          echo "${{ secrets.VANILLA_CONFIG_SCRIPT }}" | base64 -d | bash
+          printf '%s\n' "${{ secrets.CONFIG_LINES_VANILLA }}" >> "$DEFCONFIG"
         fi
 
     - name: Build Kernel
