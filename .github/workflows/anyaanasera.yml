@@ -224,6 +224,7 @@ jobs:
       if: steps.check.outputs.should_run == 'true'
       run: |
         cd kernel
+        export TZ="Asia/Jakarta"
         export PATH="$CLANG_PATH:$PATH"
         export KBUILD_BUILD_USER="builder-dev"
         export KBUILD_BUILD_HOST="${{ matrix.build_host }}"
