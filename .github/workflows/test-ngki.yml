@@ -6,10 +6,10 @@ on:
       branch:
         description: "Kernel source branch"
         required: true
-        default: "main"
+        default: "13.0.0-perf"
         type: choice
         options:
-          - main
+          - 13.0.0-perf
           - staging
       clang:
         description: "Clang toolchain"
