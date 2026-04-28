@@ -90,6 +90,13 @@ jobs:
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
 
+      - name: Apply SUSFS Patch
+        run: |
+          cd kernel
+          wget -O susfs.patch "https://raw.githubusercontent.com/ip2na/builder/main/kernel-patched/susfs_patch_to_4.19.patch"
+          patch -p1 --forward < susfs.patch
+          rm -f susfs.patch
+
       - name: Inject Config
         run: |
           CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
