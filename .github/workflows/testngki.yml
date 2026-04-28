@@ -39,7 +39,7 @@ jobs:
               CLANG_TYPE="mkdir"
               ;;
             aosp)
-              CLANG_URL="https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r584948b-14863223/clang-r584948b.tar.gz"
+              CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
               CLANG_TYPE="mkdir"
               ;;
           esac
