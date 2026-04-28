@@ -48,17 +48,9 @@ jobs:
 
       - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo docker image prune -af 2>/dev/null || true
-          sudo apt-get remove -y '^llvm-.*' '^clang-.*' '^libclang-.*' 2>/dev/null || true
-          sudo apt-get autoremove -y
-          sudo apt clean
-          df -h
+         sudo rm -rf /usr/share/dotnet
+         sudo rm -rf /opt/ghc
+         sudo apt clean
 
       - name: Install Dependencies
         run: |
@@ -113,10 +105,10 @@ jobs:
       - name: Generate Build Info
         run: |
           echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
-          echo "COMMIT=$(git -C kernel log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
-          echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+          echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')" >> $GITHUB_ENV
+          echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*\"\(.*\)\".*/\1/')" >> $GITHUB_ENV
           echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
-          echo "DATE=$(TZ=Asia/Jakarta date "+%d/%m/%Y %H:%M WIB")" >> $GITHUB_ENV
+          echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')" >> $GITHUB_ENV
           echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
 
       - name: Clone AnyKernel3
@@ -125,6 +117,7 @@ jobs:
 
       - name: Copy Kernel Artifacts
         run: |
+          mkdir -p ak3/dtbs
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
           find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
           if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
@@ -134,19 +127,29 @@ jobs:
       - name: Pack ZIP
         run: |
           cd ak3
-          zip -r9 $ZIP_NAME * -x "*.git*" -x "*.github*"
+          zip -r9 ${{ env.ZIP_NAME }} * -x "*.git*" -x "*.github*"
+          ls -lh ${{ env.ZIP_NAME }}
 
       - name: Send ZIP to Telegram
         run: |
-          ZIP_PATH="${{ github.workspace }}/ak3/$ZIP_NAME"
-          curl --fail -s -X POST \
+          ZIP_PATH="${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}"
+          echo "Checking file: $ZIP_PATH"
+          ls -la "$ZIP_PATH"
+          curl --fail -v -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -F "document=@${ZIP_PATH}" \
             -F "parse_mode=HTML" \
             -F "caption=<b>Valeryn Kernel — SM6115</b>
-            🌱 <b>Branch:</b> <code>${BRANCH}</code>
-            🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
-            📆 <b>Build date:</b> <code>${DATE}</code>
-            ♻️ <b>Latest commit:</b> ${COMMIT}
-            ⚙️ <b>Compiler:</b> ${COMPILER}"
+            🌱 <b>Branch:</b> <code>${{ env.BRANCH }}</code>
+            🐧 <b>Linux version:</b> <code>${{ env.KERNEL_VER }}</code>
+            📆 <b>Build date:</b> <code>${{ env.DATE }}</code>
+            ♻️ <b>Latest commit:</b> ${{ env.COMMIT }}
+            ⚙️ <b>Compiler:</b> ${{ env.COMPILER }}"
+
+      - name: Upload ZIP artifact (optional debug)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-zip-failed
+          path: ak3/${{ env.ZIP_NAME }}
