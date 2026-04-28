@@ -39,7 +39,7 @@ jobs:
               CLANG_TYPE="mkdir"
               ;;
             aosp)
-              CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
+              CLANG_URL="https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r584948b-14863223/clang-r584948b.tar.gz"
               CLANG_TYPE="mkdir"
               ;;
           esac
@@ -102,19 +102,18 @@ jobs:
           export TZ="Asia/Jakarta"
           export PATH="$CLANG_PATH:$PATH"
           export KBUILD_BUILD_USER="builder-dev"
-          export KBUILD_BUILD_HOST="valeryn"
+          export KBUILD_BUILD_HOST="anyaprjkt"
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- vendor/bengal-perf_defconfig
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image.gz
 
       - name: Generate Build Info
         run: |
-          cd kernel
-          echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
-          echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
-          echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+          echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+          echo "COMMIT=$(git -C kernel log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+          echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
           echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
           echo "DATE=$(TZ=Asia/Jakarta date "+%d/%m/%Y %H:%M WIB")" >> $GITHUB_ENV
-          echo "RELEASE_TAG=valeryn-${{ github.run_number }}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=chime-${{ github.run_number }}" >> $GITHUB_ENV
           echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
 
       - name: Clone AnyKernel3
