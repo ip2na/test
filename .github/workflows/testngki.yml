@@ -132,20 +132,17 @@ jobs:
 
       - name: Send ZIP to Telegram
         run: |
-           ZIP_PATH="${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}"
-            echo "Checking file: $ZIP_PATH"
-           ls -la "$ZIP_PATH"
-           curl --fail -X POST \
+          curl --fail -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-           -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-           -F "document=@${ZIP_PATH}" \
-           -F "parse_mode=HTML" \
-           -F "caption=<b>Valeryn Kernel — SM6115</b>
-           🌱 <b>Branch:</b> <code>${BRANCH}</code>
-           🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
-           📆 <b>Build date:</b> <code>${DATE}</code>
-           ♻️ <b>Latest commit:</b> ${COMMIT}
-           ⚙️ <b>Compiler:</b> ${COMPILER}"
+            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F "document=@${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}" \
+            -F "parse_mode=HTML" \
+            -F "caption=<b>Valeryn Kernel — SM6115</b>
+          🌱 <b>Branch:</b> <code>${BRANCH}</code>
+          🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
+          📆 <b>Build date:</b> <code>${DATE}</code>
+          ♻️ <b>Latest commit:</b> ${COMMIT}
+          ⚙️ <b>Compiler:</b> ${COMPILER}"
 
       - name: Upload ZIP artifact (debug on failure)
         if: failure()
