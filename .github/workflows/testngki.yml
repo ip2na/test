@@ -131,18 +131,40 @@ jobs:
           ls -lh "$ZIP_NAME"
 
       - name: Send ZIP to Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ZIP_PATH: ${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}
         run: |
-          curl --fail -X POST \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}" \
-            -F "parse_mode=HTML" \
-            -F "caption=<b>Valeryn Kernel — SM6115</b>
-          🌱 <b>Branch:</b> <code>${BRANCH}</code>
-          🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
-          📆 <b>Build date:</b> <code>${DATE}</code>
-          ♻️ <b>Latest commit:</b> ${COMMIT}
-          ⚙️ <b>Compiler:</b> ${COMPILER}"
+          python3 - <<'EOF'
+          import requests, os, sys
+
+          token    = os.environ["TELEGRAM_TOKEN"]
+          chat_id  = os.environ["TELEGRAM_CHAT_ID"]
+          zip_path = os.environ["ZIP_PATH"]
+
+          caption = (
+            "<b>Valeryn Kernel \u2014 SM6115</b>\n"
+            f"\U0001f331 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
+            f"\U0001f427 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
+            f"\U0001f4c6 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
+            f"\u267b\ufe0f <b>Latest commit:</b> {os.environ['COMMIT']}\n"
+            f"\u2699\ufe0f <b>Compiler:</b> {os.environ['COMPILER']}"
+          )
+
+          print(f"Sending: {zip_path}")
+          with open(zip_path, "rb") as f:
+            r = requests.post(
+              f"https://api.telegram.org/bot{token}/sendDocument",
+              data={"chat_id": chat_id, "parse_mode": "HTML", "caption": caption},
+              files={"document": f},
+              timeout=300
+            )
+
+          print(f"Status: {r.status_code}")
+          print(r.text)
+          r.raise_for_status()
+          EOF
 
       - name: Upload ZIP artifact (debug on failure)
         if: failure()
