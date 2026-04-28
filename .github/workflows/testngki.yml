@@ -19,9 +19,6 @@ jobs:
     name: Build Valeryn Kernel
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
       - name: Set Clang Variables
         run: |
@@ -113,7 +110,6 @@ jobs:
           echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
           echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
           echo "DATE=$(TZ=Asia/Jakarta date "+%d/%m/%Y %H:%M WIB")" >> $GITHUB_ENV
-          echo "RELEASE_TAG=chime-${{ github.run_number }}" >> $GITHUB_ENV
           echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
 
       - name: Clone AnyKernel3
@@ -133,43 +129,16 @@ jobs:
           cd ak3
           zip -r9 $ZIP_NAME * -x "*.git*" -x "*.github*"
 
-      - name: Send Notification to Telegram
+      - name: Send ZIP to Telegram
         run: |
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
-          MSG=$(printf '<b>Valeryn Kernel — SM6115</b>\n🌱 <b>Branch:</b> <code>%s</code>\n🐧 <b>Linux version:</b> <code>%s</code>\n📆 <b>Build date:</b> <code>%s</code>\n♻️ <b>Latest commit:</b> %s\n⚙️ <b>Compiler:</b> %s\n\n📥 <b>Download:</b> <a href="%s">GitHub Release</a>' \
-            "$BRANCH" "$KERNEL_VER" "$DATE" "$COMMIT" "$COMPILER" "$RELEASE_URL")
           curl --fail -s -X POST \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "parse_mode=HTML" \
-            --data-urlencode "disable_web_page_preview=true" \
-            --data-urlencode "text=$MSG"
-
-      - name: Cleanup Old Releases (keep latest 10)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASES=$(gh release list --limit 100 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[10:] | .[].tagName')
-          for TAG in $RELEASES; do
-            echo "Deleting old release: $TAG"
-            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          done
-
-      - name: Upload to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_TITLE="Valeryn Kernel | SM6115 | $DATE"
-          RELEASE_NOTES="## Valeryn Kernel
-
-          **🌱 Branch:** \`$BRANCH\`
-          **🐧 Linux version:** \`$KERNEL_VER\`
-          **📆 Build date:** \`$DATE\`
-          **♻️ Latest commit:** $COMMIT
-          **⚙️ Compiler:** $COMPILER"
-          gh release create "$RELEASE_TAG" \
-            ak3/$ZIP_NAME \
-            --title "$RELEASE_TITLE" \
-            --notes "$RELEASE_NOTES" \
-            --latest
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F "document=@ak3/$ZIP_NAME" \
+            -F "caption=<b>Valeryn Kernel — SM6115</b>
+           🌱 <b>Branch:</b> <code>$BRANCH</code>
+           🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
+           📆 <b>Build date:</b> <code>$DATE</code>
+           ♻️ <b>Latest commit:</b> $COMMIT
+           ⚙️ <b>Compiler:</b> $COMPILER" \
+              -F "parse_mode=HTML"
