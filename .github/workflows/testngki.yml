@@ -136,14 +136,14 @@ jobs:
       - name: Send Notification to Telegram
         run: |
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
-          printf '<b>Valeryn Kernel — SM6115</b>\n🌱 <b>Branch:</b> <code>%s</code>\n🐧 <b>Linux version:</b> <code>%s</code>\n📆 <b>Build date:</b> <code>%s</code>\n♻️ <b>Latest commit:</b> %s\n⚙️ <b>Compiler:</b> %s\n\n📥 <b>Download:</b> <a href="%s">GitHub Release</a>' \
-            "$BRANCH" "$KERNEL_VER" "$DATE" "$COMMIT" "$COMPILER" "$RELEASE_URL" > /tmp/tg_msg.txt
+          MSG=$(printf '<b>Valeryn Kernel — SM6115</b>\n🌱 <b>Branch:</b> <code>%s</code>\n🐧 <b>Linux version:</b> <code>%s</code>\n📆 <b>Build date:</b> <code>%s</code>\n♻️ <b>Latest commit:</b> %s\n⚙️ <b>Compiler:</b> %s\n\n📥 <b>Download:</b> <a href="%s">GitHub Release</a>' \
+            "$BRANCH" "$KERNEL_VER" "$DATE" "$COMMIT" "$COMPILER" "$RELEASE_URL")
           curl --fail -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "parse_mode=HTML" \
-            -F "disable_web_page_preview=true" \
-            -F "text=</tmp/tg_msg.txt"
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=$MSG"
 
       - name: Cleanup Old Releases (keep latest 10)
         env:
