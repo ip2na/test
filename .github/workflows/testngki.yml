@@ -6,13 +6,13 @@ on:
       clang:
         description: "Clang toolchain"
         required: true
-        default: "greenforce"
+        default: "aosp"
         type: choice
         options:
+          - aosp
           - greenforce
           - llvm
           - zyc
-          - aosp
 
 jobs:
   build:
@@ -44,7 +44,7 @@ jobs:
           echo "CLANG_URL=$CLANG_URL" >> $GITHUB_ENV
           echo "CLANG_TYPE=$CLANG_TYPE" >> $GITHUB_ENV
           echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
-          echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
+          echo "CLANG_CACHE_KEY=clang-$FILENAME" >> $GITHUB_ENV
 
       - name: Free Disk Space
         run: |
@@ -93,6 +93,13 @@ jobs:
         run: |
           git clone --branch android16 --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
 
+      - name: Inject Config
+        run: |
+          CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
+          echo "${{ secrets.CONFIG_LINES }}" >> $CONFIG_FILE
+          echo "Config injected:"
+          tail -20 $CONFIG_FILE
+
       - name: Build Kernel
         run: |
           cd kernel
@@ -131,14 +138,15 @@ jobs:
 
       - name: Send ZIP to Telegram
         run: |
+          ZIP_PATH="${{ github.workspace }}/ak3/$ZIP_NAME"
           curl --fail -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
             -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@ak3/$ZIP_NAME" \
+            -F "document=@${ZIP_PATH}" \
+            -F "parse_mode=HTML" \
             -F "caption=<b>Valeryn Kernel — SM6115</b>
-           🌱 <b>Branch:</b> <code>$BRANCH</code>
-           🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
-           📆 <b>Build date:</b> <code>$DATE</code>
-           ♻️ <b>Latest commit:</b> $COMMIT
-           ⚙️ <b>Compiler:</b> $COMPILER" \
-              -F "parse_mode=HTML"
+            🌱 <b>Branch:</b> <code>${BRANCH}</code>
+            🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
+            📆 <b>Build date:</b> <code>${DATE}</code>
+            ♻️ <b>Latest commit:</b> ${COMMIT}
+            ⚙️ <b>Compiler:</b> ${COMPILER}"
