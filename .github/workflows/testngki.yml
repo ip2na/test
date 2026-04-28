@@ -96,7 +96,7 @@ jobs:
       - name: Inject Config
         run: |
           CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
-          echo "${{ secrets.CONFIG_LINES }}" >> $CONFIG_FILE
+          echo "${{ secrets.VALERYN_CONFIG_LINES }}" >> $CONFIG_FILE
           echo "Config injected:"
           tail -20 $CONFIG_FILE
 
