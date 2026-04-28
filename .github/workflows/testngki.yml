@@ -85,6 +85,11 @@ jobs:
         run: |
           git clone --branch android16 --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
 
+      - name: Setup KernelSU Next (Hookless)
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
+
       - name: Inject Config
         run: |
           CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
