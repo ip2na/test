@@ -123,9 +123,7 @@ jobs:
       - name: Copy Kernel Artifacts
         run: |
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
-          # Copy DTB files
           find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
-          # Copy DTBO image if exists
           if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
             cp kernel/out/arch/arm64/boot/dtbo.img ak3/
           fi
@@ -138,20 +136,14 @@ jobs:
       - name: Send Notification to Telegram
         run: |
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
-          MESSAGE="<b>Valeryn Kernel — SM6115</b>
-          🌱 <b>Branch:</b> <code>$BRANCH</code>
-          🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
-          📆 <b>Build date:</b> <code>$DATE</code>
-          ♻️ <b>Latest commit:</b> $COMMIT
-          ⚙️ <b>Compiler:</b> $COMPILER
-
-          📥 <b>Download:</b> <a href=\"$RELEASE_URL\">GitHub Release</a>"
+          printf '<b>Valeryn Kernel — SM6115</b>\n🌱 <b>Branch:</b> <code>%s</code>\n🐧 <b>Linux version:</b> <code>%s</code>\n📆 <b>Build date:</b> <code>%s</code>\n♻️ <b>Latest commit:</b> %s\n⚙️ <b>Compiler:</b> %s\n\n📥 <b>Download:</b> <a href="%s">GitHub Release</a>' \
+            "$BRANCH" "$KERNEL_VER" "$DATE" "$COMMIT" "$COMPILER" "$RELEASE_URL" > /tmp/tg_msg.txt
           curl --fail -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=HTML" \
-            -d "disable_web_page_preview=true" \
-            --data-urlencode "text=$MESSAGE"
+            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F "parse_mode=HTML" \
+            -F "disable_web_page_preview=true" \
+            -F "text=</tmp/tg_msg.txt"
 
       - name: Cleanup Old Releases (keep latest 10)
         env:
