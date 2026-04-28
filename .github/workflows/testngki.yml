@@ -1,0 +1,169 @@
+name: Build Valeryn Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      clang:
+        description: "Clang toolchain"
+        required: true
+        default: "greenforce"
+        type: choice
+        options:
+          - greenforce
+          - llvm
+          - zyc
+          - aosp
+
+jobs:
+  build:
+    name: Build Valeryn Kernel
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Set Clang Variables
+        run: |
+          case "${{ github.event.inputs.clang }}" in
+            greenforce)
+              CLANG_URL="https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz"
+              CLANG_TYPE="mkdir"
+              ;;
+            llvm)
+              CLANG_URL="https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.4-x86_64.tar.gz"
+              CLANG_TYPE="llvm"
+              ;;
+            zyc)
+              CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250401-release/Clang-20.0.0git-20250401.tar.gz"
+              CLANG_TYPE="mkdir"
+              ;;
+            aosp)
+              CLANG_URL="https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r584948b-14863223/clang-r584948b.tar.gz"
+              CLANG_TYPE="mkdir"
+              ;;
+          esac
+          FILENAME=$(basename $CLANG_URL .tar.gz)
+          echo "CLANG_URL=$CLANG_URL" >> $GITHUB_ENV
+          echo "CLANG_TYPE=$CLANG_TYPE" >> $GITHUB_ENV
+          echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
+          echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo apt clean
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+
+      - name: Cache Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/${{ env.CLANG_DIR }}
+          key: ${{ env.CLANG_CACHE_KEY }}
+
+      - name: Setup Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          if [ "$CLANG_TYPE" = "llvm" ]; then
+            wget $CLANG_URL
+            tar -zxf $(basename $CLANG_URL)
+            rm -rf $(basename $CLANG_URL)
+          else
+            mkdir -p $CLANG_DIR
+            wget -O clang.tar.gz $CLANG_URL
+            tar -zxf clang.tar.gz -C $CLANG_DIR
+            rm -rf clang.tar.gz
+          fi
+
+      - name: Set Clang PATH
+        run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
+
+      - name: Checkout Kernel
+        uses: actions/checkout@v4
+        with:
+          ref: android16
+          fetch-depth: 1
+
+      - name: Build Kernel
+        run: |
+          export TZ="Asia/Jakarta"
+          export PATH="$CLANG_PATH:$PATH"
+          export KBUILD_BUILD_USER="builder-dev"
+          export KBUILD_BUILD_HOST="anyaprjkt"
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- vendor/bengal-pref_defconfig
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc --all) Image.gz
+
+      - name: Generate Build Info
+        run: |
+          echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
+          echo "COMMIT=$(git log -1 --pretty=format:"%s (%an)")" >> $GITHUB_ENV
+          echo "KERNEL_VER=$(cat out/include/generated/utsrelease.h | sed 's/.*"\(.*\)".*/\1/')" >> $GITHUB_ENV
+          echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
+          echo "DATE=$(TZ=Asia/Jakarta date "+%d/%m/%Y %H:%M WIB")" >> $GITHUB_ENV
+          echo "RELEASE_TAG=valeryn-${{ github.run_number }}" >> $GITHUB_ENV
+          echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/greenforce-project/AnyKernel3.git ak3
+
+      - name: Copy Image.gz
+        run: cp out/arch/arm64/boot/Image.gz ak3/
+
+      - name: Pack ZIP
+        run: |
+          cd ak3
+          zip -r9 $ZIP_NAME * -x "*.git*" -x "*.github*"
+
+      - name: Send Notification to Telegram
+        run: |
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
+          MESSAGE="<b>Valeryn Kernel — SM6115</b>
+          🌱 <b>Branch:</b> <code>$BRANCH</code>
+          🐧 <b>Linux version:</b> <code>$KERNEL_VER</code>
+          📆 <b>Build date:</b> <code>$DATE</code>
+          ♻️ <b>Latest commit:</b> $COMMIT
+          ⚙️ <b>Compiler:</b> $COMPILER
+
+          📥 <b>Download:</b> <a href=\"$RELEASE_URL\">GitHub Release</a>"
+          curl --fail -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=$MESSAGE"
+
+      - name: Cleanup Old Releases (keep latest 10)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASES=$(gh release list --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[10:] | .[].tagName')
+          for TAG in $RELEASES; do
+            echo "Deleting old release: $TAG"
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          done
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TITLE="Valeryn Kernel | SM6115 | $DATE"
+          RELEASE_NOTES="## Valeryn Kernel
+
+          **🌱 Branch:** \`$BRANCH\`
+          **🐧 Linux version:** \`$KERNEL_VER\`
+          **📆 Build date:** \`$DATE\`
+          **♻️ Latest commit:** $COMMIT
+          **⚙️ Compiler:** $COMPILER"
+          gh release create "$RELEASE_TAG" \
+            ak3/$ZIP_NAME \
+            --title "$RELEASE_TITLE" \
+            --notes "$RELEASE_NOTES" \
+            --latest
