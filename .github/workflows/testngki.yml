@@ -40,17 +40,17 @@ jobs:
               CLANG_TYPE="mkdir"
               ;;
           esac
-          FILENAME=$(basename $CLANG_URL .tar.gz)
+          FILENAME=$(basename "$CLANG_URL" .tar.gz)
           echo "CLANG_URL=$CLANG_URL" >> $GITHUB_ENV
           echo "CLANG_TYPE=$CLANG_TYPE" >> $GITHUB_ENV
           echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
-          echo "CLANG_CACHE_KEY=clang-$FILENAME" >> $GITHUB_ENV
+          echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
 
       - name: Free Disk Space
         run: |
-         sudo rm -rf /usr/share/dotnet
-         sudo rm -rf /opt/ghc
-         sudo apt clean
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo apt clean
 
       - name: Install Dependencies
         run: |
@@ -68,14 +68,14 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           if [ "$CLANG_TYPE" = "llvm" ]; then
-            wget $CLANG_URL
-            tar -zxf $(basename $CLANG_URL)
-            rm -rf $(basename $CLANG_URL)
+            wget "$CLANG_URL"
+            tar -zxf "$(basename "$CLANG_URL")"
+            rm -f "$(basename "$CLANG_URL")"
           else
-            mkdir -p $CLANG_DIR
-            wget -O clang.tar.gz $CLANG_URL
-            tar -zxf clang.tar.gz -C $CLANG_DIR
-            rm -rf clang.tar.gz
+            mkdir -p "$CLANG_DIR"
+            wget -O clang.tar.gz "$CLANG_URL"
+            tar -zxf clang.tar.gz -C "$CLANG_DIR"
+            rm -f clang.tar.gz
           fi
 
       - name: Set Clang PATH
@@ -88,9 +88,9 @@ jobs:
       - name: Inject Config
         run: |
           CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
-          echo "${{ secrets.VALERYN_CONFIG_LINES }}" >> $CONFIG_FILE
+          printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> "$CONFIG_FILE"
           echo "Config injected:"
-          tail -20 $CONFIG_FILE
+          tail -20 "$CONFIG_FILE"
 
       - name: Build Kernel
         run: |
@@ -127,27 +127,27 @@ jobs:
       - name: Pack ZIP
         run: |
           cd ak3
-          zip -r9 ${{ env.ZIP_NAME }} * -x "*.git*" -x "*.github*"
-          ls -lh ${{ env.ZIP_NAME }}
+          zip -r9 "$ZIP_NAME" * -x "*.git*" -x "*.github*"
+          ls -lh "$ZIP_NAME"
 
       - name: Send ZIP to Telegram
         run: |
-          ZIP_PATH="${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}"
-          echo "Checking file: $ZIP_PATH"
-          ls -la "$ZIP_PATH"
-          curl --fail -v -X POST \
+           ZIP_PATH="${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}"
+            echo "Checking file: $ZIP_PATH"
+           ls -la "$ZIP_PATH"
+           curl --fail -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-            -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F "document=@${ZIP_PATH}" \
-            -F "parse_mode=HTML" \
-            -F "caption=<b>Valeryn Kernel — SM6115</b>
-            🌱 <b>Branch:</b> <code>${{ env.BRANCH }}</code>
-            🐧 <b>Linux version:</b> <code>${{ env.KERNEL_VER }}</code>
-            📆 <b>Build date:</b> <code>${{ env.DATE }}</code>
-            ♻️ <b>Latest commit:</b> ${{ env.COMMIT }}
-            ⚙️ <b>Compiler:</b> ${{ env.COMPILER }}"
+           -F "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+           -F "document=@${ZIP_PATH}" \
+           -F "parse_mode=HTML" \
+           -F "caption=<b>Valeryn Kernel — SM6115</b>
+           🌱 <b>Branch:</b> <code>${BRANCH}</code>
+           🐧 <b>Linux version:</b> <code>${KERNEL_VER}</code>
+           📆 <b>Build date:</b> <code>${DATE}</code>
+           ♻️ <b>Latest commit:</b> ${COMMIT}
+           ⚙️ <b>Compiler:</b> ${COMPILER}"
 
-      - name: Upload ZIP artifact (optional debug)
+      - name: Upload ZIP artifact (debug on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
