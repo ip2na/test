@@ -83,7 +83,7 @@ jobs:
 
       - name: Clone Kernel Source
         run: |
-          git clone --branch android16 --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
+          git clone --branch staging --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
 
       - name: Setup KernelSU Next (Hookless)
         run: |
