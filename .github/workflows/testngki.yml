@@ -1,4 +1,4 @@
-name: Build Valeryn Kernel
+name: Build chime Kernel
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
 
 jobs:
   build:
-    name: Build Valeryn Kernel
+    name: Build chime Kernel
     runs-on: ubuntu-latest
 
     steps:
@@ -83,7 +83,7 @@ jobs:
 
       - name: Clone Kernel Source
         run: |
-          git clone --branch ksu-sus --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
+          git clone --branch main --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
 
       - name: Setup KernelSU Next (Hookless)
         run: |
@@ -118,7 +118,7 @@ jobs:
 
       - name: Clone AnyKernel3
         run: |
-          git clone --depth=1 https://github.com/greenforce-project/AnyKernel3.git ak3
+          git clone -b gki-1.0 --depth=1 https://github.com/ip2na/Anykernel3.git ak3
 
       - name: Copy Kernel Artifacts
         run: |
