@@ -28,7 +28,7 @@ jobs:
               CLANG_TYPE="mkdir"
               ;;
             llvm)
-              CLANG_URL="https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.4-x86_64.tar.gz"
+              CLANG_URL="https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.5-x86_64.tar.gz"
               CLANG_TYPE="llvm"
               ;;
             zyc)
@@ -83,7 +83,7 @@ jobs:
 
       - name: Clone Kernel Source
         run: |
-          git clone --branch staging --depth=1 https://github.com/ip2na/valeryn_xiaomi_sm6115.git kernel
+          git clone --branch staging --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
 
       - name: Setup KernelSU Next (Hookless)
         run: |
