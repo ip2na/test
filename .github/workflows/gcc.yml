@@ -46,7 +46,7 @@ jobs:
           FILETYPE=$(file -b gcc.archive)
           echo "Detected file type: $FILETYPE"
 
-          case "$FILETYPE" in
+           case "$FILETYPE" in
             *"XZ compressed"*)
               tar -xJf gcc.archive -C "$GCC_DIR" --strip-components=1
               ;;
@@ -59,11 +59,14 @@ jobs:
             *"Zip archive"*)
               unzip -q gcc.archive -d "$GCC_DIR"
               ;;
+            *"POSIX tar archive"* | *"tar archive"*)
+              tar -xf gcc.archive -C "$GCC_DIR" --strip-components=1
+              ;;
             *)
               echo "Unknown format: $FILETYPE"
               exit 1
               ;;
-          esac
+          esac       
 
           rm -f gcc.archive
           echo "GCC bin contents:"
