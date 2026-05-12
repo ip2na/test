@@ -1,113 +1,95 @@
-name: Build chime Kernel 22
+name: Valeryn Kernel — CI
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Kernel branch
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - main
+
+env:
+  CLANG_FILE: gf-clang-22.1.4-20260410
+  CLANG_URL: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
 
 jobs:
   build:
-    name: Build chime Kernel
+    name: sm6115 · ${{ github.event.inputs.branch }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set Clang Variables
+      - name: Reclaim disk space
         run: |
-          CLANG_URL="https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz"
-          FILENAME="gf-clang-22.1.4-20260410"
-          echo "CLANG_URL=$CLANG_URL" >> $GITHUB_ENV
-          echo "CLANG_DIR=$FILENAME" >> $GITHUB_ENV
-          echo "CLANG_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
-
-      - name: Free Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/{dotnet,swift} /usr/local/lib/android /opt/{ghc,hostedtoolcache/CodeQL} /usr/local/share/boost
           sudo docker image prune -af 2>/dev/null || true
-          sudo apt clean
-          df -h
+          sudo apt-get clean && df -h
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
 
-      - name: Cache Clang
+      - name: Restore toolchain cache
         id: cache-clang
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/${{ env.CLANG_DIR }}
-          key: ${{ env.CLANG_CACHE_KEY }}
+          path: ${{ github.workspace }}/${{ env.CLANG_FILE }}
+          key: ${{ env.CLANG_FILE }}
 
-      - name: Setup Clang
+      - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$CLANG_DIR"
-          wget -O clang.tar.gz "$CLANG_URL"
-          tar -zxf clang.tar.gz -C "$CLANG_DIR"
-          rm -f clang.tar.gz
+          mkdir -p "$CLANG_FILE"
+          wget -qO clang.tar.gz "$CLANG_URL"
+          tar -xf clang.tar.gz -C "$CLANG_FILE" && rm clang.tar.gz
 
-      - name: Set Clang PATH
-        run: echo "CLANG_PATH=$(pwd)/$CLANG_DIR/bin" >> $GITHUB_ENV
+      - name: Checkout kernel source
+        run: git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
 
-      - name: Clone Kernel Source
+      - name: Integrate KernelSU Next
+        run: curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
+        working-directory: kernel
+
+      - name: Apply defconfig overlay
         run: |
-          git clone --branch staging --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
+          CONFIG="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
+          printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> "$CONFIG"
+          tail -20 "$CONFIG"
 
-      - name: Setup KernelSU Next (Hookless)
+      - name: Compile
         run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
-
-      - name: Inject Config
-        run: |
-          CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
-          printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> "$CONFIG_FILE"
-          echo "Config injected:"
-          tail -20 "$CONFIG_FILE"
-
-      - name: Build Kernel
-        run: |
-          cd kernel
           export TZ="Asia/Jakarta"
-          export PATH="$CLANG_PATH:$PATH"
-          export KBUILD_BUILD_USER="builder-dev"
-          export KBUILD_BUILD_HOST="anyaprjk"
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- vendor/bengal-perf_defconfig
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu- \
-            -j$(nproc --all) Image.gz dtbs
+          export PATH="${{ github.workspace }}/${{ env.CLANG_FILE }}/bin:$PATH"
+          export KBUILD_BUILD_USER="builder-dev" KBUILD_BUILD_HOST="anyaprjk"
+          MAKE="make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu-"
+          $MAKE vendor/bengal-perf_defconfig
+          $MAKE -j$(nproc) Image.gz dtbs
+        working-directory: kernel
 
-      - name: Generate Build Info
+      - name: Collect build metadata
         run: |
-          echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
-          echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')" >> $GITHUB_ENV
-          echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*\"\(.*\)\".*/\1/')" >> $GITHUB_ENV
-          echo "COMPILER=$($CLANG_PATH/clang --version | head -n 1)" >> $GITHUB_ENV
-          echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')" >> $GITHUB_ENV
-          echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
+          CLANG_BIN="${{ github.workspace }}/${{ env.CLANG_FILE }}/bin"
+          {
+            echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)"
+            echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')"
+            echo "KERNEL_VER=$(sed 's/.*\"\(.*\)\".*/\1/' kernel/out/include/generated/utsrelease.h)"
+            echo "COMPILER=$($CLANG_BIN/clang --version | head -1)"
+            echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')"
+            echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip"
+          } >> $GITHUB_ENV
 
-      - name: Clone AnyKernel3
+      - name: Package flashable ZIP
         run: |
           git clone -b gki-1.0 --depth=1 https://github.com/ip2na/Anykernel3.git ak3
-
-      - name: Copy Kernel Artifacts
-        run: |
           mkdir -p ak3/dtbs
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
           find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
-          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
-            cp kernel/out/arch/arm64/boot/dtbo.img ak3/
-          fi
+          [ -f kernel/out/arch/arm64/boot/dtbo.img ] && cp kernel/out/arch/arm64/boot/dtbo.img ak3/
+          cd ak3 && zip -r9 "$ZIP_NAME" . -x "*.git*" "*.github*" && ls -lh "$ZIP_NAME"
 
-      - name: Pack ZIP
-        run: |
-          cd ak3
-          zip -r9 "$ZIP_NAME" * -x "*.git*" -x "*.github*"
-          ls -lh "$ZIP_NAME"
-
-      - name: Send ZIP to Telegram
+      - name: Publish to Telegram
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -116,34 +98,27 @@ jobs:
           python3 - <<'EOF'
           import requests, os
 
-          token    = os.environ["TELEGRAM_TOKEN"]
-          chat_id  = os.environ["TELEGRAM_CHAT_ID"]
-          zip_path = os.environ["ZIP_PATH"]
-
           caption = (
-            "<b>Valeryn Kernel \u2014 SM6115</b>\n"
-            f"\U0001f331 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
-            f"\U0001f427 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
-            f"\U0001f4c6 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
-            f"\u267b\ufe0f <b>Latest commit:</b> {os.environ['COMMIT']}\n"
-            f"\u2699\ufe0f <b>Compiler:</b> {os.environ['COMPILER']}"
+            "<b>Valeryn Kernel — SM6115</b>\n"
+            f"🌱 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
+            f"🐧 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
+            f"📆 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
+            f"♻️ <b>Latest commit:</b> {os.environ['COMMIT']}\n"
+            f"⚙️ <b>Compiler:</b> {os.environ['COMPILER']}"
           )
 
-          print(f"Sending: {zip_path}")
-          with open(zip_path, "rb") as f:
+          with open(os.environ["ZIP_PATH"], "rb") as f:
             r = requests.post(
-              f"https://api.telegram.org/bot{token}/sendDocument",
-              data={"chat_id": chat_id, "parse_mode": "HTML", "caption": caption},
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendDocument",
+              data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "parse_mode": "HTML", "caption": caption},
               files={"document": f},
               timeout=300
             )
-
-          print(f"Status: {r.status_code}")
-          print(r.text)
+          print(f"Status: {r.status_code}\n{r.text}")
           r.raise_for_status()
           EOF
 
-      - name: Upload ZIP artifact (debug on failure)
+      - name: Upload artifact on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
