@@ -13,8 +13,6 @@ on:
           - main
 
 env:
-  GCC_URL: https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz
-  GCC_DIR: eva-gcc-arm64-06052026
   CLANG_URL: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
   CLANG_DIR: gf-clang-22.1.4-20260410
 
@@ -28,40 +26,24 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /opt/ghc && sudo apt clean
 
       - name: Install build dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio xz-utils file
-
-      - name: Restore toolchain cache
-        uses: actions/cache@v4
-        id: cache-toolchain
-        with:
-          path: |
-            ${{ github.workspace }}/${{ env.GCC_DIR }}
-            ${{ github.workspace }}/${{ env.CLANG_DIR }}
-          key: toolchain-${{ env.GCC_DIR }}-${{ env.CLANG_DIR }}
-
-      - name: Download toolchains
-        if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
-          # Clang
+          sudo apt-get update -qq
+          sudo apt-get install -y git curl wget bc bison flex libssl-dev libelf-dev \
+            zip cpio xz-utils file gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Restore Clang cache
+        uses: actions/cache@v4
+        id: cache-clang
+        with:
+          path: ${{ github.workspace }}/${{ env.CLANG_DIR }}
+          key: ${{ env.CLANG_DIR }}
+
+      - name: Download Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
           mkdir -p "$CLANG_DIR"
           wget -qO clang.tar.gz "$CLANG_URL"
           tar -xf clang.tar.gz -C "$CLANG_DIR" && rm clang.tar.gz
-
-          # GCC (cross-compile only)
-          mkdir -p "$GCC_DIR"
-          wget -qO gcc.archive "$GCC_URL"
-          case "$(file -b gcc.archive)" in
-            *"XZ compressed"*)   tar -xJf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
-            *"gzip compressed"*) tar -xzf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
-            *"bzip2 compressed"*)tar -xjf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
-            *"tar archive"*)     tar -xf  gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
-            *"Zip archive"*)     unzip -q  gcc.archive -d "$GCC_DIR" ;;
-            *) echo "Unknown archive format"; exit 1 ;;
-          esac
-          rm -f gcc.archive
-
-          # Debug: verify GCC bin
-          echo "=== GCC bin ===" && ls "$GCC_DIR/bin" | head -20
 
       - name: Checkout kernel source
         run: git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
@@ -76,19 +58,14 @@ jobs:
       - name: Compile
         run: |
           CLANG_BIN="${{ github.workspace }}/${{ env.CLANG_DIR }}/bin"
-          GCC_BIN="${{ github.workspace }}/${{ env.GCC_DIR }}/bin"
-
-          echo "=== GCC bin ===" && ls "$GCC_BIN" | head -20
-          GCC_PREFIX=$(ls "$GCC_BIN" | grep -m1 "gcc$" | sed 's/gcc$//')
-          echo "GCC_PREFIX: '$GCC_PREFIX'"
 
           export TZ="Asia/Jakarta"
-          export PATH="$CLANG_BIN:$GCC_BIN:$PATH"
+          export PATH="$CLANG_BIN:$PATH"
           export KBUILD_BUILD_USER="builder-dev"
           export KBUILD_BUILD_HOST="anyaprjk"
 
-          # Clang as compiler · GCC as cross-assembler
-          # Polly + O3 + LTO thin — Clang-native, safe on 4.19.x
+          # Clang as compiler · aarch64-linux-gnu (apt) as cross-assembler/linker
+          # Polly + O3 + LTO thin — Clang-native,
           export KCFLAGS="-O3 \
             -march=armv8-a+crc+simd \
             -mtune=cortex-a53 \
@@ -100,7 +77,7 @@ jobs:
           MAKE="make ARCH=arm64 O=out \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=$GCC_PREFIX \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             LLVM_IAS=1"
 
           $MAKE vendor/bengal-perf_defconfig
