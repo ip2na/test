@@ -1,147 +1,125 @@
-name: Build chime Kernel gcc
+name: Valeryn Kernel — Hybrid CI
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Kernel branch
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - main
+
+env:
+  GCC_URL: https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz
+  GCC_DIR: eva-gcc-arm64-06052026
+  CLANG_URL: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
+  CLANG_DIR: gf-clang-22.1.4-20260410
 
 jobs:
   build:
-    name: Build chime Kernel
+    name: sm6115 · clang+gcc · ${{ github.event.inputs.branch }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set GCC Variables
-        run: |
-          GCC_URL="https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz"
-          FILENAME=$(basename "$GCC_URL")
-          FILENAME="${FILENAME%.xz}"
-          FILENAME="${FILENAME%.tar.gz}"
-          echo "GCC_URL=$GCC_URL" >> $GITHUB_ENV
-          echo "GCC_DIR=$FILENAME" >> $GITHUB_ENV
-          echo "GCC_CACHE_KEY=$FILENAME" >> $GITHUB_ENV
+      - name: Reclaim disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc && sudo apt clean
 
-      - name: Free Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo apt clean
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio xz-utils file
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio xz-utils file
-
-      - name: Cache GCC
-        id: cache-gcc
+      - name: Restore toolchain cache
         uses: actions/cache@v4
+        id: cache-toolchain
         with:
-          path: ${{ github.workspace }}/${{ env.GCC_DIR }}
-          key: ${{ env.GCC_CACHE_KEY }}
+          path: |
+            ${{ github.workspace }}/${{ env.GCC_DIR }}
+            ${{ github.workspace }}/${{ env.CLANG_DIR }}
+          key: toolchain-${{ env.GCC_DIR }}-${{ env.CLANG_DIR }}
 
-      - name: Setup GCC
-        if: steps.cache-gcc.outputs.cache-hit != 'true'
+      - name: Download toolchains
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
         run: |
+          # Clang
+          mkdir -p "$CLANG_DIR"
+          wget -qO clang.tar.gz "$CLANG_URL"
+          tar -xf clang.tar.gz -C "$CLANG_DIR" && rm clang.tar.gz
+
+          # GCC (cross-compile only)
           mkdir -p "$GCC_DIR"
-          wget -O gcc.archive "$GCC_URL"
-
-          FILETYPE=$(file -b gcc.archive)
-          echo "Detected file type: $FILETYPE"
-
-           case "$FILETYPE" in
-            *"XZ compressed"*)
-              tar -xJf gcc.archive -C "$GCC_DIR" --strip-components=1
-              ;;
-            *"gzip compressed"*)
-              tar -xzf gcc.archive -C "$GCC_DIR" --strip-components=1
-              ;;
-            *"bzip2 compressed"*)
-              tar -xjf gcc.archive -C "$GCC_DIR" --strip-components=1
-              ;;
-            *"Zip archive"*)
-              unzip -q gcc.archive -d "$GCC_DIR"
-              ;;
-            *"POSIX tar archive"* | *"tar archive"*)
-              tar -xf gcc.archive -C "$GCC_DIR" --strip-components=1
-              ;;
-            *)
-              echo "Unknown format: $FILETYPE"
-              exit 1
-              ;;
-          esac       
-
+          wget -qO gcc.archive "$GCC_URL"
+          case "$(file -b gcc.archive)" in
+            *"XZ compressed"*)   tar -xJf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
+            *"gzip compressed"*) tar -xzf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
+            *"bzip2 compressed"*)tar -xjf gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
+            *"tar archive"*)     tar -xf  gcc.archive -C "$GCC_DIR" --strip-components=1 ;;
+            *"Zip archive"*)     unzip -q  gcc.archive -d "$GCC_DIR" ;;
+            *) echo "Unknown archive format"; exit 1 ;;
+          esac
           rm -f gcc.archive
-          echo "GCC bin contents:"
-          ls "$GCC_DIR/bin/" | head -20
 
-      - name: Set GCC PATH
-        run: echo "GCC_PATH=$(pwd)/$GCC_DIR/bin" >> $GITHUB_ENV
+      - name: Checkout kernel source
+        run: git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
 
-      - name: Clone Kernel Source
+      - name: Integrate KernelSU Next
+        run: curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
+        working-directory: kernel
+
+      - name: Apply defconfig overlay
+        run: printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> kernel/arch/arm64/configs/vendor/bengal-perf_defconfig
+
+      - name: Compile
         run: |
-          git clone --branch staging --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
+          CLANG_BIN="${{ github.workspace }}/${{ env.CLANG_DIR }}/bin"
+          GCC_BIN="${{ github.workspace }}/${{ env.GCC_DIR }}/bin"
+          GCC_PREFIX=$(ls "$GCC_BIN" | grep -m1 "gcc$" | sed 's/gcc$//')
 
-      - name: Setup KernelSU Next (Hookless)
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
-
-      - name: Inject Config
-        run: |
-          CONFIG_FILE="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
-          printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> "$CONFIG_FILE"
-          echo "Config injected:"
-          tail -20 "$CONFIG_FILE"
-
-      - name: Build Kernel
-        run: |
-          cd kernel
           export TZ="Asia/Jakarta"
-          export PATH="$GCC_PATH:$PATH"
+          export PATH="$CLANG_BIN:$GCC_BIN:$PATH"
           export KBUILD_BUILD_USER="builder-dev"
-          export KBUILD_BUILD_HOST="anyaprjk"
+          export KBUILD_BUILD_HOST="anyaprjk"        
+          export KCFLAGS="-O3 \
+            -march=armv8-a+crc+simd \
+            -mtune=cortex-a53 \
+            -mllvm -polly \
+            -mllvm -polly-vectorizer=stripmine \
+            -fno-semantic-interposition"
+          export KLDFLAGS="-flto=thin"
 
-          GCC_PREFIX=$(ls "$GCC_PATH" | grep -m1 "gcc$" | sed 's/gcc$//')
-          echo "Using GCC prefix: $GCC_PREFIX"
+          MAKE="make ARCH=arm64 O=out \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=$GCC_PREFIX \
+            LLVM_IAS=1"
 
-          make ARCH=arm64 \
-            CROSS_COMPILE="$GCC_PREFIX" \
-            CC="${GCC_PREFIX}gcc" \
-            O=out vendor/bengal-perf_defconfig
+          $MAKE vendor/bengal-perf_defconfig
+          $MAKE -j$(nproc) Image.gz dtbs
+        working-directory: kernel
 
-          make ARCH=arm64 \
-            CROSS_COMPILE="$GCC_PREFIX" \
-            CC="${GCC_PREFIX}gcc" \
-            O=out -j$(nproc --all) Image.gz dtbs
-
-      - name: Generate Build Info
+      - name: Collect build metadata
         run: |
-          GCC_PREFIX=$(ls "$GCC_PATH" | grep -m1 "gcc$" | sed 's/gcc$//')
-          echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)" >> $GITHUB_ENV
-          echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')" >> $GITHUB_ENV
-          echo "KERNEL_VER=$(cat kernel/out/include/generated/utsrelease.h | sed 's/.*\"\(.*\)\".*/\1/')" >> $GITHUB_ENV
-          echo "COMPILER=$($GCC_PATH/${GCC_PREFIX}gcc --version | head -n 1)" >> $GITHUB_ENV
-          echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')" >> $GITHUB_ENV
-          echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip" >> $GITHUB_ENV
+          CLANG_BIN="${{ github.workspace }}/${{ env.CLANG_DIR }}/bin"
+          {
+            echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)"
+            echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')"
+            echo "KERNEL_VER=$(sed 's/.*\"\(.*\)\".*/\1/' kernel/out/include/generated/utsrelease.h)"
+            echo "COMPILER=$($CLANG_BIN/clang --version | head -1)"
+            echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')"
+            echo "ZIP_NAME=Valeryn-SM6115-Hybrid-${{ github.run_number }}.zip"
+          } >> $GITHUB_ENV
 
-      - name: Clone AnyKernel3
+      - name: Package flashable ZIP
         run: |
           git clone -b gki-1.0 --depth=1 https://github.com/ip2na/Anykernel3.git ak3
-
-      - name: Copy Kernel Artifacts
-        run: |
           mkdir -p ak3/dtbs
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
           find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
-          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
-            cp kernel/out/arch/arm64/boot/dtbo.img ak3/
-          fi
+          [ -f kernel/out/arch/arm64/boot/dtbo.img ] && cp kernel/out/arch/arm64/boot/dtbo.img ak3/
+          cd ak3 && zip -r9 "$ZIP_NAME" . -x "*.git*" "*.github*" && ls -lh "$ZIP_NAME"
 
-      - name: Pack ZIP
-        run: |
-          cd ak3
-          zip -r9 "$ZIP_NAME" * -x "*.git*" -x "*.github*"
-          ls -lh "$ZIP_NAME"
-
-      - name: Send ZIP to Telegram
+      - name: Publish to Telegram
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -150,36 +128,29 @@ jobs:
           python3 - <<'EOF'
           import requests, os
 
-          token    = os.environ["TELEGRAM_TOKEN"]
-          chat_id  = os.environ["TELEGRAM_CHAT_ID"]
-          zip_path = os.environ["ZIP_PATH"]
-
           caption = (
-            "<b>Valeryn Kernel \u2014 SM6115</b>\n"
-            f"\U0001f331 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
-            f"\U0001f427 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
-            f"\U0001f4c6 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
-            f"\u267b\ufe0f <b>Latest commit:</b> {os.environ['COMMIT']}\n"
-            f"\u2699\ufe0f <b>Compiler:</b> {os.environ['COMPILER']}"
+            "<b>Valeryn Kernel — SM6115 (Hybrid)</b>\n"
+            f"🌱 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
+            f"🐧 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
+            f"📆 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
+            f"♻️ <b>Latest commit:</b> {os.environ['COMMIT']}\n"
+            f"⚙️ <b>Compiler:</b> {os.environ['COMPILER']}"
           )
 
-          print(f"Sending: {zip_path}")
-          with open(zip_path, "rb") as f:
+          with open(os.environ["ZIP_PATH"], "rb") as f:
             r = requests.post(
-              f"https://api.telegram.org/bot{token}/sendDocument",
-              data={"chat_id": chat_id, "parse_mode": "HTML", "caption": caption},
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendDocument",
+              data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "parse_mode": "HTML", "caption": caption},
               files={"document": f},
               timeout=300
             )
-
-          print(f"Status: {r.status_code}")
-          print(r.text)
+          print(f"Status: {r.status_code}\n{r.text}")
           r.raise_for_status()
           EOF
 
-      - name: Upload ZIP artifact (debug on failure)
+      - name: Upload artifact on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-zip-failed
+          name: kernel-zip-hybrid-failed
           path: ak3/${{ env.ZIP_NAME }}
