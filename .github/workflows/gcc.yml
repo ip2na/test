@@ -65,7 +65,7 @@ jobs:
           export KBUILD_BUILD_HOST="anyaprjk"
 
           # Clang as compiler · aarch64-linux-gnu (apt) as cross-assembler/linker
-          # Polly + O3 + LTO thin — Clang-native,
+          # Polly + O3 + LTO thin — Clang-native, safe on 4.19.x
           export KCFLAGS="-O3 \
             -march=armv8-a+crc+simd \
             -mtune=cortex-a53 \
@@ -77,8 +77,7 @@ jobs:
           MAKE="make ARCH=arm64 O=out \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LLVM_IAS=1"
+            CROSS_COMPILE=aarch64-linux-gnu-" 
 
           $MAKE vendor/bengal-perf_defconfig
           $MAKE -j$(nproc) Image.gz dtbs
