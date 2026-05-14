@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: Kernel branch
+        description: "Kernel branch"
         required: true
         default: staging
         type: choice
@@ -12,24 +12,39 @@ on:
           - staging
           - main
 
+# ---------------------------------------------------------------------------
+# Global constants — toolchain is fixed for this kernel target
+# ---------------------------------------------------------------------------
 env:
   CLANG_FILE: gf-clang-22.1.4-20260410
   CLANG_URL: https://github.com/greenforce-project/greenforce_clang/releases/download/20260410/gf-clang-22.1.4-20260410.tar.gz
 
 jobs:
   build:
-    name: sm6115 · ${{ github.event.inputs.branch }}
+    name: "sm6115 · ${{ github.event.inputs.branch }}"
     runs-on: ubuntu-latest
 
+    # -------------------------------------------------------------------------
+    # Steps
+    # -------------------------------------------------------------------------
     steps:
       - name: Reclaim disk space
         run: |
-          sudo rm -rf /usr/share/{dotnet,swift} /usr/local/lib/android /opt/{ghc,hostedtoolcache/CodeQL} /usr/local/share/boost
+          sudo rm -rf \
+            /usr/share/{dotnet,swift} \
+            /usr/local/lib/android \
+            /opt/{ghc,hostedtoolcache/CodeQL} \
+            /usr/local/share/boost
           sudo docker image prune -af 2>/dev/null || true
-          sudo apt-get clean && df -h
+          sudo apt-get clean
+          df -h
 
       - name: Install build dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y git curl wget bc bison flex libssl-dev libelf-dev zip cpio
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            git curl wget bc bison flex \
+            libssl-dev libelf-dev zip cpio
 
       - name: Restore toolchain cache
         id: cache-clang
@@ -38,86 +53,152 @@ jobs:
           path: ${{ github.workspace }}/${{ env.CLANG_FILE }}
           key: ${{ env.CLANG_FILE }}
 
-      - name: Download Clang
+      - name: Download and extract Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$CLANG_FILE"
-          wget -qO clang.tar.gz "$CLANG_URL"
-          tar -xf clang.tar.gz -C "$CLANG_FILE" && rm clang.tar.gz
+          wget -q -O clang.tar.gz "$CLANG_URL"
+          tar -xf clang.tar.gz -C "$CLANG_FILE"
+          rm clang.tar.gz
 
-      - name: Checkout kernel source
-        run: git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/ip2na/anya_xiaomi_sm6115.git kernel
+      - name: Clone kernel source
+        run: |
+          git clone \
+            --branch "${{ github.event.inputs.branch }}" \
+            --depth=1 \
+            https://github.com/ip2na/anya_xiaomi_sm6115.git \
+            kernel
 
-      - name: Integrate KernelSU Next
-        run: curl -LSs "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" | bash -s hookless
+      # KernelSU Next hookless — no fs-hook modifications to the kernel tree
+      - name: Integrate KernelSU Next (hookless)
         working-directory: kernel
+        run: |
+          curl -LSs \
+            "https://raw.githubusercontent.com/Sorayukii/KernelSU-Next/stable/kernel/setup.sh" \
+            | bash -s hookless
 
+          echo "KSU_COMMIT=$(git -C KernelSU-Next log -1 --pretty=format:'%s (%an)')" >> "$GITHUB_ENV"
+
+      # Append via printf to avoid heredoc quoting / interpolation issues
       - name: Apply defconfig overlay
         run: |
           CONFIG="kernel/arch/arm64/configs/vendor/bengal-perf_defconfig"
           printf '%s\n' "${{ secrets.VALERYN_CONFIG_LINES }}" >> "$CONFIG"
+          echo "--- tail of defconfig ---"
           tail -20 "$CONFIG"
 
-      - name: Compile
+      # -----------------------------------------------------------------------
+      # Compile
+      # -----------------------------------------------------------------------
+      - name: Compile kernel
+        working-directory: kernel
         run: |
           export TZ="Asia/Jakarta"
           export PATH="${{ github.workspace }}/${{ env.CLANG_FILE }}/bin:$PATH"
-          export KBUILD_BUILD_USER="builder-dev" KBUILD_BUILD_HOST="anyaprjk"
-          MAKE="make ARCH=arm64 LLVM=1 LLVM_IAS=1 O=out CROSS_COMPILE=aarch64-linux-gnu-"
-          $MAKE vendor/bengal-perf_defconfig
-          $MAKE -j$(nproc) Image.gz dtbs
-        working-directory: kernel
+          export KBUILD_BUILD_USER="builder-dev"
+          export KBUILD_BUILD_HOST="anyaprjkt"
 
+          MAKE_ARGS=(
+            ARCH=arm64
+            LLVM=1
+            LLVM_IAS=1
+            O=out
+            CROSS_COMPILE=aarch64-linux-gnu-
+          )
+
+          make "${MAKE_ARGS[@]}" vendor/bengal-perf_defconfig
+          make "${MAKE_ARGS[@]}" -j"$(nproc --all)" Image.gz dtbs
+
+      # -----------------------------------------------------------------------
+      # Collect metadata for release notes and Telegram caption
+      # -----------------------------------------------------------------------
       - name: Collect build metadata
         run: |
           CLANG_BIN="${{ github.workspace }}/${{ env.CLANG_FILE }}/bin"
           {
-            echo "BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)"
-            echo "COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')"
+            echo "GIT_BRANCH=$(git -C kernel rev-parse --abbrev-ref HEAD)"
+            echo "GIT_COMMIT=$(git -C kernel log -1 --pretty=format:'%s (%an)')"
             echo "KERNEL_VER=$(sed 's/.*\"\(.*\)\".*/\1/' kernel/out/include/generated/utsrelease.h)"
-            echo "COMPILER=$($CLANG_BIN/clang --version | head -1)"
-            echo "DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')"
+            echo "COMPILER=$("$CLANG_BIN/clang" --version | head -1)"
+            echo "BUILD_DATE=$(TZ=Asia/Jakarta date '+%d/%m/%Y %H:%M WIB')"
             echo "ZIP_NAME=Valeryn-SM6115-${{ github.run_number }}.zip"
-          } >> $GITHUB_ENV
+          } >> "$GITHUB_ENV"
 
+      # -----------------------------------------------------------------------
+      # Package AnyKernel3 flashable ZIP
+      # -----------------------------------------------------------------------
       - name: Package flashable ZIP
         run: |
-          git clone -b gki-1.0 --depth=1 https://github.com/ip2na/Anykernel3.git ak3
+          git clone --depth=1 -b gki-1.0 \
+            https://github.com/ip2na/Anykernel3.git \
+            ak3
+
           mkdir -p ak3/dtbs
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
-          find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
-          [ -f kernel/out/arch/arm64/boot/dtbo.img ] && cp kernel/out/arch/arm64/boot/dtbo.img ak3/
-          cd ak3 && zip -r9 "$ZIP_NAME" . -x "*.git*" "*.github*" && ls -lh "$ZIP_NAME"
 
+          # DTBs — tolerate missing files gracefully
+          find kernel/out/arch/arm64/boot/dts \
+            -name "*.dtb" \
+            -exec cp {} ak3/dtbs/ \; 2>/dev/null || true
+
+          # DTBO — optional, not all builds produce it
+          [[ -f kernel/out/arch/arm64/boot/dtbo.img ]] && \
+            cp kernel/out/arch/arm64/boot/dtbo.img ak3/
+
+          cd ak3
+          zip -r9 "$ZIP_NAME" . --exclude '*.git*' --exclude '*.github*'
+          ls -lh "$ZIP_NAME"
+
+      # -----------------------------------------------------------------------
+      # Upload ZIP to Telegram via Python (avoids shell interpolation issues)
+      # -----------------------------------------------------------------------
       - name: Publish to Telegram
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ZIP_PATH: ${{ github.workspace }}/ak3/${{ env.ZIP_NAME }}
+          KSU_COMMIT: ${{ env.KSU_COMMIT }}
         run: |
-          python3 - <<'EOF'
-          import requests, os
+          python3 - <<'PYEOF'
+          import os
+          import sys
+          import requests
 
-          caption = (
-            "<b>Valeryn Kernel — SM6115</b>\n"
-            f"🌱 <b>Branch:</b> <code>{os.environ['BRANCH']}</code>\n"
-            f"🐧 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>\n"
-            f"📆 <b>Build date:</b> <code>{os.environ['DATE']}</code>\n"
-            f"♻️ <b>Latest commit:</b> {os.environ['COMMIT']}\n"
-            f"⚙️ <b>Compiler:</b> {os.environ['COMPILER']}"
-          )
+          caption = "\n".join([
+            "<b>Valeryn Kernel — SM6115</b>",
+            f"🌱 <b>Branch:</b> <code>{os.environ['GIT_BRANCH']}</code>",
+            f"🐧 <b>Linux version:</b> <code>{os.environ['KERNEL_VER']}</code>",
+            f"📆 <b>Build date:</b> <code>{os.environ['BUILD_DATE']}</code>",
+            f"♻️ <b>Latest commit:</b> {os.environ['GIT_COMMIT']}",
+            f"🔐 <b>KSU commit:</b> {os.environ['KSU_COMMIT']}",
+            f"⚙️ <b>Compiler:</b> {os.environ['COMPILER']}",
+          ])
 
-          with open(os.environ["ZIP_PATH"], "rb") as f:
-            r = requests.post(
-              f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendDocument",
-              data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "parse_mode": "HTML", "caption": caption},
-              files={"document": f},
-              timeout=300
+          zip_path = os.environ["ZIP_PATH"]
+          api_url  = f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendDocument"
+
+          print(f"Uploading: {zip_path}")
+
+          with open(zip_path, "rb") as fh:
+            response = requests.post(
+              api_url,
+              data={
+                "chat_id":    os.environ["TELEGRAM_CHAT_ID"],
+                "parse_mode": "HTML",
+                "caption":    caption,
+              },
+              files={"document": fh},
+              timeout=300,
             )
-          print(f"Status: {r.status_code}\n{r.text}")
-          r.raise_for_status()
-          EOF
 
+          print(f"HTTP {response.status_code}")
+          print(response.text)
+          response.raise_for_status()
+          PYEOF
+
+      # -----------------------------------------------------------------------
+      # On failure: preserve the ZIP (if it exists) for manual inspection
+      # -----------------------------------------------------------------------
       - name: Upload artifact on failure
         if: failure()
         uses: actions/upload-artifact@v4
